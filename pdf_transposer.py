@@ -93,82 +93,67 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
     for page_num in range(len(doc)):
         page = doc[page_num]
         
-        # Estraiamo TUTTE le parole originali PRIMA di modificare la pagina
-        words = page.get_text("words")
         text_dict = page.get_text("dict")
-        
-        # Salviamo i rettangoli della Key per ignorarli nel ciclo delle parole
-        key_rects = []
-        
-        # Lista di tuple (punto_inserimento, testo, font_size, colore)
         insertions = []
         
-        # A) Troviamo anche il rettangolo dove c'è "Key: XXX" per sostituirlo
         for block in text_dict.get("blocks", []):
             if block.get("type") == 0: # E' un blocco di testo
                 for line in block.get("lines", []):
                     for span in line.get("spans", []):
                         testo_span = span.get("text", "")
+                        color = span.get("color", 0)
                         
+                        # 1) Modifica riga "Key:"
                         if "Key:" in testo_span:
                             match = re.search(r"Key:\s*([A-Za-z#b]+)", testo_span)
                             if match:
                                 rect = fitz.Rect(span["bbox"])
-                                key_rects.append(rect)
+                                original_key_text = match.group(0)
                                 
-                                original_key_text = match.group(0) # es. "Key: Do"
-                                
-                                # Applica il casing corretto alla nuova tonalità
                                 base_key = tonalita_originale_pura.replace('b', '').replace('#', '').replace('m', '')
                                 is_key_upper = base_key.isupper() if len(base_key) > 0 else False
                                 
                                 nuova_chiave_str = tonalita_obiettivo_norm
                                 if not is_key_upper:
                                     nuova_chiave_str = nuova_chiave_str.capitalize()
-                                    # Se finisce con 'b', il capitalize fa "Mib" (corretto), "Solb" (corretto).
                                 
                                 new_key_text = f"Key: {nuova_chiave_str}"
                                 if capo_tasto:
                                     new_key_text += f" | Capo: {capo_tasto}"
                                 
-                                # Prepariamo la redazione
-                                page.add_redact_annot(rect, fill=(1,1,1)) # Riempi di bianco
-                                
-                                # Ricostruiamo la riga
+                                page.add_redact_annot(rect, fill=(1,1,1))
                                 nuovo_testo_riga = testo_span.replace(original_key_text, new_key_text)
                                 font_size = span["size"]
-                                color_rgb = fitz.sRGB_to_pdf(span["color"]) if "color" in span else (0,0,0)
+                                color_rgb = fitz.sRGB_to_pdf(color)
+                                origin = fitz.Point(span["origin"])
                                 
-                                # Salviamo l'inserimento per dopo
-                                insertions.append((rect.bottom_left, nuovo_testo_riga, font_size, color_rgb))
-        
-        # B) Modifica degli Accordi basata sulle parole originali
-        for w in words:
-            rect = fitz.Rect(w[:4]) # Bounding box della parola
-            word_text = w[4].strip()
-            
-            # Controlla se la parola fa parte della riga "Key:" (interseca uno dei key_rects)
-            is_in_key_line = any(rect.intersects(k_rect) for k_rect in key_rects)
-            
-            if not is_in_key_line and is_chord(word_text):
-                new_chord = get_transposed_chord(word_text, semitoni, scala_riferimento)
-                
-                # Creiamo una redaction (riempiamo di bianco per cancellare)
-                page.add_redact_annot(rect, fill=(1,1,1))
-                
-                # Troviamo la dimensione del font originale circa usando l'altezza del rect
-                font_size = rect.height * 0.8
-                if font_size < 8: font_size = 11 # fallback
-                
-                # Calcoliamo il punto e lo salviamo
-                insertion_point = fitz.Point(rect.x0, rect.y1 - (rect.height * 0.2))
-                insertions.append((insertion_point, new_chord, font_size, (1, 0, 0)))
-                
-        # IMPORTANTE: Applichiamo tutte le redactions PRIMA di inserire il nuovo testo
-        # altrimenti la redaction cancellerebbe il nuovo testo appena scritto!
+                                insertions.append((origin, nuovo_testo_riga, font_size, color_rgb))
+                                continue
+                                
+                        # 2) Modifica Accordi (solo se colorato, es. rosso)
+                        # Ignoriamo il testo nero (0) per evitare di trasporre le parole del testo (es. "MI", "LA")
+                        if color != 0 and color != 0xFFFFFF:
+                            pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
+                            # Usiamo (?<![A-Za-z]) e (?![A-Za-z]) al posto di \b per evitare problemi con il #
+                            pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:m7|m|4|7|maj7|sus4|dim)?(?:\/{pattern_nota}(?:m7|m|4|7|maj7|sus4|dim)?)?)(?![A-Za-z])"
+                            
+                            def replace_chord(m):
+                                return get_transposed_chord(m.group(1), semitoni, scala_riferimento)
+                                
+                            new_span_text = re.sub(pattern_accordo, replace_chord, testo_span, flags=re.IGNORECASE)
+                            
+                            if new_span_text != testo_span:
+                                rect = fitz.Rect(span["bbox"])
+                                page.add_redact_annot(rect, fill=(1,1,1))
+                                
+                                font_size = span["size"]
+                                color_rgb = fitz.sRGB_to_pdf(color)
+                                origin = fitz.Point(span["origin"])
+                                
+                                insertions.append((origin, new_span_text, font_size, color_rgb))
+                                
         page.apply_redactions()
         
-        # Ora inseriamo tutto il nuovo testo
         for point, text, fsize, color in insertions:
             page.insert_text(point, text, fontsize=fsize, fontname="helv", color=color)
 
