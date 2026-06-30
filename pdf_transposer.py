@@ -1,9 +1,9 @@
 import re
 import fitz  # PyMuPDF
 
-# Scale cromatiche di riferimento
-NOTE_DIESIS = ["DO", "DO#", "RE", "RE#", "MI", "FA", "FA#", "SOL", "SOL#", "LA", "LA#", "SI"]
-NOTE_BEMOLLI = ["DO", "REb", "RE", "MIb", "MI", "FA", "SOLb", "SOL", "LAb", "LA", "SIb", "SI"]
+# Scale cromatiche di riferimento (Default Title Case)
+NOTE_DIESIS = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"]
+NOTE_BEMOLLI = ["Do", "Reb", "Re", "Mib", "Mi", "Fa", "Solb", "Sol", "Lab", "La", "Sib", "Si"]
 
 MAPPA_NOTE = {
     "DO": 0, "DO#": 1, "REb": 1, "RE": 2, "RE#": 3, "MIb": 3, "MI": 4,
@@ -24,13 +24,24 @@ def get_transposed_chord(accordo, semitoni, scala_riferimento):
             nota_fondamentale_match = m.group(1)
             estensione = m.group(2)
             
+            # Verifica se la nota originale era scritta in MAIUSCOLO (escludendo 'b' e '#')
+            # Es: "FA" -> True, "Fa" -> False, "SIb" -> True, "Sib" -> False
+            base_letters = nota_fondamentale_match.replace('b', '').replace('#', '').replace('B', '')
+            is_upper = base_letters.isupper() if len(base_letters) > 0 else False
+            
             # Normalizza per trovare in mappa (es. "Mib" -> "MIb")
             nota_fondamentale = nota_fondamentale_match.upper().replace("B", "b")
             
             indice_corrente = MAPPA_NOTE.get(nota_fondamentale)
             if indice_corrente is not None:
                 nuovo_indice = (indice_corrente + semitoni) % 12
-                parti_trasposte.append(scala_riferimento[nuovo_indice] + estensione)
+                nuova_nota = scala_riferimento[nuovo_indice] # Es: "Sol" o "Reb" (Title Case di default)
+                
+                if is_upper:
+                    # Ripristina il maiuscolo ma mantiene il 'b' minuscolo
+                    nuova_nota = nuova_nota.upper().replace("B", "b")
+                    
+                parti_trasposte.append(nuova_nota + estensione)
             else:
                 parti_trasposte.append(parte)
         else:
@@ -50,22 +61,25 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
     
     # 1. Trova la tonalità originale
     tonalita_originale = None
+    tonalita_originale_pura = None
     for page in doc:
         text = page.get_text()
         match_key = re.search(r"Key:\s*([A-Za-z#b]+)", text)
         if match_key:
+            tonalita_originale_pura = match_key.group(1).strip()
             # Es: "Sol" -> "SOL", "Sib" -> "SIb", "Lam" -> "LAm"
-            tonalita_originale = match_key.group(1).strip().upper().replace("B", "b").replace("M", "m")
+            tonalita_originale = tonalita_originale_pura.upper().replace("B", "b").replace("M", "m")
             break
             
     if not tonalita_originale:
         raise ValueError("Impossibile trovare la riga 'Key: XXX' nel PDF fornito.")
         
-    tonalita_obiettivo = tonalita_obiettivo.strip().upper().replace("B", "b")
+    tonalita_obiettivo_pura = tonalita_obiettivo.strip()
+    tonalita_obiettivo_norm = tonalita_obiettivo_pura.upper().replace("B", "b")
     
     # Rimuoviamo eventuale "m" finale per il calcolo dei semitoni (es. LAm -> LA)
     orig_base = tonalita_originale.replace("m", "")
-    obiett_base = tonalita_obiettivo.replace("m", "")
+    obiett_base = tonalita_obiettivo_norm.replace("m", "")
     
     if orig_base not in MAPPA_NOTE or obiett_base not in MAPPA_NOTE:
         raise ValueError(f"Tonalità non valida. Originale: {tonalita_originale}, Obiettivo: {tonalita_obiettivo}")
@@ -103,7 +117,17 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
                                 key_rects.append(rect)
                                 
                                 original_key_text = match.group(0) # es. "Key: Do"
-                                new_key_text = f"Key: {tonalita_obiettivo}"
+                                
+                                # Applica il casing corretto alla nuova tonalità
+                                base_key = tonalita_originale_pura.replace('b', '').replace('#', '').replace('m', '')
+                                is_key_upper = base_key.isupper() if len(base_key) > 0 else False
+                                
+                                nuova_chiave_str = tonalita_obiettivo_norm
+                                if not is_key_upper:
+                                    nuova_chiave_str = nuova_chiave_str.capitalize()
+                                    # Se finisce con 'b', il capitalize fa "Mib" (corretto), "Solb" (corretto).
+                                
+                                new_key_text = f"Key: {nuova_chiave_str}"
                                 if capo_tasto:
                                     new_key_text += f" | Capo: {capo_tasto}"
                                 
