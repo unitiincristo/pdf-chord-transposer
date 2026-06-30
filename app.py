@@ -92,4 +92,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.1.1 - Maiuscole Fedeli all'Originale")
+st.caption("Versione 1.1.2 - Protezione Testo e Nuova Selezione Colori")
