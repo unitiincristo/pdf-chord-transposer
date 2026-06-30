@@ -90,3 +90,6 @@ if uploaded_file is not None:
                 )
             except Exception as e:
                 st.error(f"Si è verificato un errore: {e}")
+
+st.markdown("---")
+st.caption("Versione 1.1.0 - Fix Bug Note & Maiuscole")
