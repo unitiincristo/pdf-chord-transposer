@@ -2,24 +2,30 @@ import re
 import fitz  # PyMuPDF
 
 # Scale cromatiche di riferimento
-NOTE_DIESIS = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"]
-NOTE_BEMOLLI = ["Do", "Reb", "Re", "Mib", "Mi", "Fa", "Solb", "Sol", "Lab", "La", "Sib", "Si"]
+NOTE_DIESIS = ["DO", "DO#", "RE", "RE#", "MI", "FA", "FA#", "SOL", "SOL#", "LA", "LA#", "SI"]
+NOTE_BEMOLLI = ["DO", "REb", "RE", "MIb", "MI", "FA", "SOLb", "SOL", "LAb", "LA", "SIb", "SI"]
 
 MAPPA_NOTE = {
-    "Do": 0, "Do#": 1, "Reb": 1, "Re": 2, "Re#": 3, "Mib": 3, "Mi": 4,
-    "Fa": 5, "Fa#": 6, "Solb": 6, "Sol": 7, "Sol#": 8, "Lab": 8, "La": 9,
-    "La#": 10, "Sib": 10, "Si": 11
+    "DO": 0, "DO#": 1, "REb": 1, "RE": 2, "RE#": 3, "MIb": 3, "MI": 4,
+    "FA": 5, "FA#": 6, "SOLb": 6, "SOL": 7, "SOL#": 8, "LAb": 8, "LA": 9,
+    "LA#": 10, "SIb": 10, "SI": 11
 }
 
 def get_transposed_chord(accordo, semitoni, scala_riferimento):
     parti = accordo.split('/')
     parti_trasposte = []
     
+    # IMPORTANTE: Ordine decrescente di lunghezza! Prima le note di 3/2 caratteri (es. SOLb, DO#), poi le singole.
+    pattern_note = r"^(DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)(.*)$"
+    
     for parte in parti:
-        m = re.match(r"^(Do#|Do|Re#|Re|Mi|Fa#|Fa|Sol#|Sol|La#|La|Si|Reb|Mib|Solb|Lab|Sib)(.*)$", parte)
+        m = re.match(pattern_note, parte.strip(), flags=re.IGNORECASE)
         if m:
-            nota_fondamentale = m.group(1)
+            nota_fondamentale_match = m.group(1)
             estensione = m.group(2)
+            
+            # Normalizza per trovare in mappa (es. "Mib" -> "MIb")
+            nota_fondamentale = nota_fondamentale_match.upper().replace("B", "b")
             
             indice_corrente = MAPPA_NOTE.get(nota_fondamentale)
             if indice_corrente is not None:
@@ -34,10 +40,10 @@ def get_transposed_chord(accordo, semitoni, scala_riferimento):
 
 def is_chord(text):
     # Pattern esatto per un singolo accordo o accordo con basso (es. Do, Rem7, Do/Mi)
-    # Ignoriamo eventuali pipe (|) o spazi usati come separatori testuali
     clean_text = text.strip()
-    pattern_accordo = r"^(?:Do#|Do|Re#|Re|Mi|Fa#|Fa|Sol#|Sol|La#|La|Si|Reb|Mib|Solb|Lab|Sib)(?:m7|m|4|7|maj7|sus4)?(?:\/(?:Do#|Do|Re#|Re|Mi|Fa#|Fa|Sol#|Sol|La#|La|Si|Reb|Mib|Solb|Lab|Sib)(?:m7|m|4|7|maj7|sus4)?)?$"
-    return bool(re.match(pattern_accordo, clean_text))
+    pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
+    pattern_accordo = rf"^{pattern_nota}(?:m7|m|4|7|maj7|sus4|dim)?(?:\/{pattern_nota}(?:m7|m|4|7|maj7|sus4|dim)?)?$"
+    return bool(re.match(pattern_accordo, clean_text, flags=re.IGNORECASE))
 
 def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -48,20 +54,25 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
         text = page.get_text()
         match_key = re.search(r"Key:\s*([A-Za-z#b]+)", text)
         if match_key:
-            tonalita_originale = match_key.group(1).strip().capitalize()
+            # Es: "Sol" -> "SOL", "Sib" -> "SIb", "Lam" -> "LAm"
+            tonalita_originale = match_key.group(1).strip().upper().replace("B", "b").replace("M", "m")
             break
             
     if not tonalita_originale:
         raise ValueError("Impossibile trovare la riga 'Key: XXX' nel PDF fornito.")
         
-    tonalita_obiettivo = tonalita_obiettivo.strip().capitalize()
+    tonalita_obiettivo = tonalita_obiettivo.strip().upper().replace("B", "b")
     
-    if tonalita_originale not in MAPPA_NOTE or tonalita_obiettivo not in MAPPA_NOTE:
+    # Rimuoviamo eventuale "m" finale per il calcolo dei semitoni (es. LAm -> LA)
+    orig_base = tonalita_originale.replace("m", "")
+    obiett_base = tonalita_obiettivo.replace("m", "")
+    
+    if orig_base not in MAPPA_NOTE or obiett_base not in MAPPA_NOTE:
         raise ValueError(f"Tonalità non valida. Originale: {tonalita_originale}, Obiettivo: {tonalita_obiettivo}")
 
     # 2. Calcola semitoni e scala
-    semitoni = (MAPPA_NOTE[tonalita_obiettivo] - MAPPA_NOTE[tonalita_originale]) % 12
-    usa_bemolli = tonalita_obiettivo in ["Fa", "Sib", "Mib", "Lab", "Reb"]
+    semitoni = (MAPPA_NOTE[obiett_base] - MAPPA_NOTE[orig_base]) % 12
+    usa_bemolli = obiett_base in ["FA", "SIb", "MIb", "LAb", "REb"]
     scala_riferimento = NOTE_BEMOLLI if usa_bemolli else NOTE_DIESIS
 
     # 3. Itera su ogni pagina per fare la replace

@@ -44,8 +44,8 @@ st.markdown("Carica il tuo PDF, scegli la nuova tonalità e scarica il file con 
 uploaded_file = st.file_uploader("Scegli un file PDF", type="pdf")
 
 # Scelta della Tonalità Obiettivo
-tonalita = ["Do", "Do#", "Reb", "Re", "Re#", "Mib", "Mi", "Fa", "Fa#", "Solb", "Sol", "Sol#", "Lab", "La", "La#", "Sib", "Si"]
-obiettivo = st.selectbox("Seleziona la Tonalità di Destinazione", tonalita, index=3) # Default su Re
+tonalita = ["DO", "DO#", "REb", "RE", "RE#", "MIb", "MI", "FA", "FA#", "SOLb", "SOL", "SOL#", "LAb", "LA", "LA#", "SIb", "SI"]
+obiettivo = st.selectbox("Seleziona la Tonalità di Destinazione", tonalita, index=3) # Default su RE
 
 # Aggiunta opzionale del Capotasto
 usa_capotasto = st.checkbox("Aggiungi indicazione Capotasto (Opzionale)")
