@@ -39,7 +39,7 @@ def is_chord(text):
     pattern_accordo = r"^(?:Do#|Do|Re#|Re|Mi|Fa#|Fa|Sol#|Sol|La#|La|Si|Reb|Mib|Solb|Lab|Sib)(?:m7|m|4|7|maj7|sus4)?(?:\/(?:Do#|Do|Re#|Re|Mi|Fa#|Fa|Sol#|Sol|La#|La|Si|Reb|Mib|Solb|Lab|Sib)(?:m7|m|4|7|maj7|sus4)?)?$"
     return bool(re.match(pattern_accordo, clean_text))
 
-def transponi_pdf(pdf_bytes, tonalita_obiettivo):
+def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     
     # 1. Trova la tonalità originale
@@ -93,6 +93,8 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo):
                                 
                                 original_key_text = match.group(0) # es. "Key: Do"
                                 new_key_text = f"Key: {tonalita_obiettivo}"
+                                if capo_tasto:
+                                    new_key_text += f" | Capo: {capo_tasto}"
                                 
                                 # Prepariamo la redazione
                                 page.add_redact_annot(rect, fill=(1,1,1)) # Riempi di bianco

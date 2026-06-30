@@ -47,6 +47,12 @@ uploaded_file = st.file_uploader("Scegli un file PDF", type="pdf")
 tonalita = ["Do", "Do#", "Reb", "Re", "Re#", "Mib", "Mi", "Fa", "Fa#", "Solb", "Sol", "Sol#", "Lab", "La", "La#", "Sib", "Si"]
 obiettivo = st.selectbox("Seleziona la Tonalità di Destinazione", tonalita, index=3) # Default su Re
 
+# Aggiunta opzionale del Capotasto
+usa_capotasto = st.checkbox("Aggiungi indicazione Capotasto (Opzionale)")
+capo_tasto = None
+if usa_capotasto:
+    capo_tasto = st.number_input("Seleziona il tasto", min_value=1, max_value=12, value=3)
+
 if uploaded_file is not None:
     st.success("File caricato correttamente!")
     
@@ -58,7 +64,7 @@ if uploaded_file is not None:
                 pdf_bytes = uploaded_file.read()
                 
                 # Chiama la logica di elaborazione
-                new_pdf_bytes, tonalita_originale = transponi_pdf(pdf_bytes, obiettivo)
+                new_pdf_bytes, tonalita_originale = transponi_pdf(pdf_bytes, obiettivo, capo_tasto)
                 
                 st.success(f"Trasposizione completata da {tonalita_originale} a {obiettivo}!")
                 
