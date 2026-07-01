@@ -68,7 +68,7 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
         if match_key:
             tonalita_originale_pura = match_key.group(1).strip()
             # Es: "Sol" -> "SOL", "Sib" -> "SIb", "Lam" -> "LAm", "Re-" -> "RE-"
-            tonalita_originale = tonalita_originale_pura.upper().replace("B", "b").replace("M", "m")
+            tonalita_originale = re.sub(r'M$', 'm', tonalita_originale_pura.upper().replace("B", "b"))
             break
             
     if not tonalita_originale:
