@@ -102,6 +102,10 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
                     for span in line.get("spans", []):
                         testo_span = span.get("text", "")
                         color = span.get("color", 0)
+                        flags = span.get("flags", 0)
+                        font_name = span.get("font", "").lower()
+                        is_bold = bool(flags & 16) or "bold" in font_name
+                        target_font = "hebo" if is_bold else "helv"
                         
                         # 1) Modifica riga "Key:" o "Tonalità:"
                         match_key_span = re.search(r"(Key|Tonalità|Tonalita):\s*([A-Za-z#b\-]+)", testo_span, flags=re.IGNORECASE)
@@ -133,15 +137,12 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
                             color_rgb = fitz.sRGB_to_pdf(color)
                             origin = fitz.Point(span["origin"])
                             
-                            insertions.append((origin, nuovo_testo_riga, font_size, color_rgb))
+                            insertions.append((origin, nuovo_testo_riga, font_size, color_rgb, target_font))
                             continue
                                 
                         # 2) Modifica Accordi
                         # Vecchio template: accordi rossi (colorati). Ancora più vecchio: neri ma in GRASSETTO (bold).
                         # Ignoriamo il testo nero normale per evitare di trasporre le parole del testo (es. "MI", "LA").
-                        flags = span.get("flags", 0)
-                        font_name = span.get("font", "").lower()
-                        is_bold = bool(flags & 16) or "bold" in font_name
                         is_colored = color != 0 and color != 0xFFFFFF
                         
                         if is_colored or (color == 0 and is_bold):
@@ -165,13 +166,18 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
                                 font_size = span["size"]
                                 color_rgb = fitz.sRGB_to_pdf(color)
                                 origin = fitz.Point(span["origin"])
+                                # Calcoliamo la differenza di larghezza per centrare il nuovo accordo
+                                old_width = fitz.get_text_length(testo_span, fontname=target_font, fontsize=font_size)
+                                new_width = fitz.get_text_length(new_span_text, fontname=target_font, fontsize=font_size)
+                                shift_x = (new_width - old_width) / 2
+                                origin.x -= shift_x
                                 
-                                insertions.append((origin, new_span_text, font_size, color_rgb))
+                                insertions.append((origin, new_span_text, font_size, color_rgb, target_font))
                                 
         page.apply_redactions()
         
-        for point, text, fsize, color in insertions:
-            page.insert_text(point, text, fontsize=fsize, fontname="helv", color=color)
+        for point, text, fsize, color, font in insertions:
+            page.insert_text(point, text, fontsize=fsize, fontname=font, color=color)
 
     # Restituisce i byte del nuovo PDF e la tonalità originale trovata
     return doc.write(), tonalita_originale
