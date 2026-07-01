@@ -56,6 +56,28 @@ def is_chord(text):
     pattern_accordo = rf"^{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?$"
     return bool(re.match(pattern_accordo, clean_text, flags=re.IGNORECASE))
 
+def is_lyric_span(text):
+    words = text.split()
+    musical_keywords = {"intro", "vamp", "coro", "verso", "bridge", "instrumental", "ending", "pre-coro", "bpm", "tempo", "key", "tonalita", "tonalità"}
+    
+    for w in words:
+        w_clean = re.sub(r'^[\(\[\|\.,;:\-\/]+|[\)\]\|\.,;:\-\/]+$', '', w).lower()
+        if not w_clean:
+            continue
+        if re.match(r'^x\d+$', w_clean):
+            continue
+        if w_clean in musical_keywords or w_clean.isdigit():
+            continue
+            
+        pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
+        pattern_accordo = rf"^{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?$"
+        if re.match(pattern_accordo, w_clean, flags=re.IGNORECASE):
+            continue
+            
+        # Se c'è almeno una parola "normale", è un rigo di testo
+        return True
+    return False
+
 def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     
@@ -146,6 +168,10 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
                         is_colored = color != 0 and color != 0xFFFFFF
                         
                         if is_colored or (color == 0 and is_bold):
+                            # Se è un rigo di testo (es. "MI SCELSE" in grassetto), ignoriamolo!
+                            if is_lyric_span(testo_span):
+                                continue
+                                
                             # Protezione per i link YouTube (spesso in blu)
                             if "http://" in testo_span or "https://" in testo_span or "www." in testo_span:
                                 continue
@@ -166,11 +192,14 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
                                 font_size = span["size"]
                                 color_rgb = fitz.sRGB_to_pdf(color)
                                 origin = fitz.Point(span["origin"])
-                                # Calcoliamo la differenza di larghezza per centrare il nuovo accordo
+                                
+                                # Calcoliamo la differenza di larghezza per evitare sovrapposizioni
                                 old_width = fitz.get_text_length(testo_span, fontname=target_font, fontsize=font_size)
                                 new_width = fitz.get_text_length(new_span_text, fontname=target_font, fontsize=font_size)
-                                shift_x = (new_width - old_width) / 2
-                                origin.x -= shift_x
+                                
+                                if new_width > old_width * 1.02:
+                                    # Riduciamo proporzionalmente il font per mantenere l'ingombro originale
+                                    font_size = font_size * (old_width / new_width)
                                 
                                 insertions.append((origin, new_span_text, font_size, color_rgb, target_font))
                                 
