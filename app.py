@@ -70,16 +70,21 @@ if uploaded_file is not None:
                 
                 # Generazione intelligente del nuovo nome file
                 original_name = uploaded_file.name
-                # Se la tonalità originale (es. DO, Do, do) è presente nel nome, la sostituiamo
                 import re
                 
-                # Usiamo una regex case-insensitive con i word boundary per non sostituire "do" dentro "dono"
-                pattern = r'\b' + re.escape(tonalita_originale) + r'\b'
+                # Usiamo lookarounds (?<![A-Za-z]) e (?![A-Za-z]) per evitare i limiti di \b con caratteri speciali come # o -
+                pattern = rf"(?<![A-Za-z]){re.escape(tonalita_originale)}(?![A-Za-z])"
                 if re.search(pattern, original_name, flags=re.IGNORECASE):
                     new_file_name = re.sub(pattern, obiettivo, original_name, flags=re.IGNORECASE)
                 else:
-                    # Se non c'è nel nome, aggiungiamo semplicemente il suffisso alla fine
-                    new_file_name = f"{original_name.replace('.pdf', '')}_{obiettivo}.pdf"
+                    # Se non c'è la tonalità esatta, proviamo con la nota base (es. se nel nome c'è "SI" ma la tonalità è "SI-")
+                    base_orig = tonalita_originale.replace("m", "").replace("-", "")
+                    pattern_base = rf"(?<![A-Za-z]){re.escape(base_orig)}(?![A-Za-z])"
+                    if re.search(pattern_base, original_name, flags=re.IGNORECASE):
+                        new_file_name = re.sub(pattern_base, obiettivo, original_name, flags=re.IGNORECASE)
+                    else:
+                        # Se non c'è nel nome, aggiungiamo semplicemente il suffisso alla fine
+                        new_file_name = f"{original_name.replace('.pdf', '')}_{obiettivo}.pdf"
                 
                 # Bottone per il download
                 st.download_button(

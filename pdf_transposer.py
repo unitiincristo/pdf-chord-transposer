@@ -53,7 +53,7 @@ def is_chord(text):
     # Pattern esatto per un singolo accordo o accordo con basso (es. Do, Rem7, Do/Mi)
     clean_text = text.strip()
     pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
-    pattern_accordo = rf"^{pattern_nota}(?:m7|m|4|7|maj7|sus4|dim)?(?:\/{pattern_nota}(?:m7|m|4|7|maj7|sus4|dim)?)?$"
+    pattern_accordo = rf"^{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?$"
     return bool(re.match(pattern_accordo, clean_text, flags=re.IGNORECASE))
 
 def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
@@ -64,22 +64,22 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
     tonalita_originale_pura = None
     for page in doc:
         text = page.get_text()
-        match_key = re.search(r"Key:\s*([A-Za-z#b]+)", text)
+        match_key = re.search(r"(?:Key|Tonalità|Tonalita):\s*([A-Za-z#b\-]+)", text, flags=re.IGNORECASE)
         if match_key:
             tonalita_originale_pura = match_key.group(1).strip()
-            # Es: "Sol" -> "SOL", "Sib" -> "SIb", "Lam" -> "LAm"
+            # Es: "Sol" -> "SOL", "Sib" -> "SIb", "Lam" -> "LAm", "Re-" -> "RE-"
             tonalita_originale = tonalita_originale_pura.upper().replace("B", "b").replace("M", "m")
             break
             
     if not tonalita_originale:
-        raise ValueError("Impossibile trovare la riga 'Key: XXX' nel PDF fornito.")
+        raise ValueError("Impossibile trovare la riga 'Key: XXX' o 'Tonalità: XXX' nel PDF fornito.")
         
     tonalita_obiettivo_pura = tonalita_obiettivo.strip()
     tonalita_obiettivo_norm = tonalita_obiettivo_pura.upper().replace("B", "b")
     
-    # Rimuoviamo eventuale "m" finale per il calcolo dei semitoni (es. LAm -> LA)
-    orig_base = tonalita_originale.replace("m", "")
-    obiett_base = tonalita_obiettivo_norm.replace("m", "")
+    # Rimuoviamo eventuale "m" o "-" finale per il calcolo dei semitoni (es. LAm -> LA, SI- -> SI)
+    orig_base = tonalita_originale.replace("m", "").replace("-", "")
+    obiett_base = tonalita_obiettivo_norm.replace("m", "").replace("-", "")
     
     if orig_base not in MAPPA_NOTE or obiett_base not in MAPPA_NOTE:
         raise ValueError(f"Tonalità non valida. Originale: {tonalita_originale}, Obiettivo: {tonalita_obiettivo}")
@@ -103,39 +103,49 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
                         testo_span = span.get("text", "")
                         color = span.get("color", 0)
                         
-                        # 1) Modifica riga "Key:"
-                        if "Key:" in testo_span:
-                            match = re.search(r"Key:\s*([A-Za-z#b]+)", testo_span)
-                            if match:
-                                rect = fitz.Rect(span["bbox"])
-                                original_key_text = match.group(0)
+                        # 1) Modifica riga "Key:" o "Tonalità:"
+                        match_key_span = re.search(r"(Key|Tonalità|Tonalita):\s*([A-Za-z#b\-]+)", testo_span, flags=re.IGNORECASE)
+                        if match_key_span:
+                            rect = fitz.Rect(span["bbox"])
+                            original_key_text = match_key_span.group(0)
+                            prefix_found = match_key_span.group(1)
+                            
+                            base_key = tonalita_originale_pura.replace('b', '').replace('#', '').replace('m', '').replace('-', '')
+                            is_key_upper = base_key.isupper() if len(base_key) > 0 else False
+                            
+                            minor_suffix = ""
+                            if "m" in tonalita_originale:
+                                minor_suffix = "m"
+                            elif "-" in tonalita_originale:
+                                minor_suffix = "-"
+                            
+                            nuova_chiave_str = tonalita_obiettivo_norm + minor_suffix
+                            if not is_key_upper:
+                                nuova_chiave_str = tonalita_obiettivo_norm.capitalize() + minor_suffix
+                            
+                            new_key_text = f"{prefix_found}: {nuova_chiave_str}"
+                            if capo_tasto:
+                                new_key_text += f" | Capo: {capo_tasto}"
                                 
-                                base_key = tonalita_originale_pura.replace('b', '').replace('#', '').replace('m', '')
-                                is_key_upper = base_key.isupper() if len(base_key) > 0 else False
-                                
-                                nuova_chiave_str = tonalita_obiettivo_norm
-                                if not is_key_upper:
-                                    nuova_chiave_str = nuova_chiave_str.capitalize()
-                                
-                                new_key_text = f"Key: {nuova_chiave_str}"
-                                if capo_tasto:
-                                    new_key_text += f" | Capo: {capo_tasto}"
-                                
-                                page.add_redact_annot(rect, fill=(1,1,1))
-                                nuovo_testo_riga = testo_span.replace(original_key_text, new_key_text)
-                                font_size = span["size"]
-                                color_rgb = fitz.sRGB_to_pdf(color)
-                                origin = fitz.Point(span["origin"])
-                                
-                                insertions.append((origin, nuovo_testo_riga, font_size, color_rgb))
-                                continue
+                            page.add_redact_annot(rect, fill=(1,1,1))
+                            nuovo_testo_riga = testo_span.replace(original_key_text, new_key_text)
+                            font_size = span["size"]
+                            color_rgb = fitz.sRGB_to_pdf(color)
+                            origin = fitz.Point(span["origin"])
+                            
+                            insertions.append((origin, nuovo_testo_riga, font_size, color_rgb))
+                            continue
                                 
                         # 2) Modifica Accordi (solo se colorato, es. rosso)
                         # Ignoriamo il testo nero (0) per evitare di trasporre le parole del testo (es. "MI", "LA")
                         if color != 0 and color != 0xFFFFFF:
+                            # Protezione per i link YouTube (spesso in blu)
+                            if "http://" in testo_span or "https://" in testo_span or "www." in testo_span:
+                                continue
+                                
                             pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
                             # Usiamo (?<![A-Za-z]) e (?![A-Za-z]) al posto di \b per evitare problemi con il #
-                            pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:m7|m|4|7|maj7|sus4|dim)?(?:\/{pattern_nota}(?:m7|m|4|7|maj7|sus4|dim)?)?)(?![A-Za-z])"
+                            pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
                             
                             def replace_chord(m):
                                 return get_transposed_chord(m.group(1), semitoni, scala_riferimento)
