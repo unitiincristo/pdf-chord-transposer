@@ -136,9 +136,15 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
                             insertions.append((origin, nuovo_testo_riga, font_size, color_rgb))
                             continue
                                 
-                        # 2) Modifica Accordi (solo se colorato, es. rosso)
-                        # Ignoriamo il testo nero (0) per evitare di trasporre le parole del testo (es. "MI", "LA")
-                        if color != 0 and color != 0xFFFFFF:
+                        # 2) Modifica Accordi
+                        # Vecchio template: accordi rossi (colorati). Ancora più vecchio: neri ma in GRASSETTO (bold).
+                        # Ignoriamo il testo nero normale per evitare di trasporre le parole del testo (es. "MI", "LA").
+                        flags = span.get("flags", 0)
+                        font_name = span.get("font", "").lower()
+                        is_bold = bool(flags & 16) or "bold" in font_name
+                        is_colored = color != 0 and color != 0xFFFFFF
+                        
+                        if is_colored or (color == 0 and is_bold):
                             # Protezione per i link YouTube (spesso in blu)
                             if "http://" in testo_span or "https://" in testo_span or "www." in testo_span:
                                 continue
