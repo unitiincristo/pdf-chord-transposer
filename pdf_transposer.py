@@ -64,7 +64,7 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
     tonalita_originale_pura = None
     for page in doc:
         text = page.get_text()
-        match_key = re.search(r"(?:Key|Tonalità|Tonalita):\s*([A-Za-z#b\-]+)", text, flags=re.IGNORECASE)
+        match_key = re.search(r"(?:Key|Tonalità|Tonalita)[:\s]+([A-Za-z#b\-]+)", text, flags=re.IGNORECASE)
         if match_key:
             tonalita_originale_pura = match_key.group(1).strip()
             # Es: "Sol" -> "SOL", "Sib" -> "SIb", "Lam" -> "LAm", "Re-" -> "RE-"
@@ -108,7 +108,7 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
                         target_font = "hebo" if is_bold else "helv"
                         
                         # 1) Modifica riga "Key:" o "Tonalità:"
-                        match_key_span = re.search(r"(Key|Tonalità|Tonalita):\s*([A-Za-z#b\-]+)", testo_span, flags=re.IGNORECASE)
+                        match_key_span = re.search(r"(Key|Tonalità|Tonalita)[:\s]+([A-Za-z#b\-]+)", testo_span, flags=re.IGNORECASE)
                         if match_key_span:
                             rect = fitz.Rect(span["bbox"])
                             original_key_text = match_key_span.group(0)
