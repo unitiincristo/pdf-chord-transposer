@@ -121,6 +121,13 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
         for block in text_dict.get("blocks", []):
             if block.get("type") == 0: # E' un blocco di testo
                 for line in block.get("lines", []):
+                    full_line_text = "".join([span.get("text", "") for span in line.get("spans", [])])
+                    has_key = bool(re.search(r"(Key|Tonalità|Tonalita)[:\s]+([A-Za-z#b\-]+)", full_line_text, flags=re.IGNORECASE))
+                    
+                    if not has_key and is_lyric_span(full_line_text):
+                        continue
+                        
+                    shift_x_accum = 0
                     for span in line.get("spans", []):
                         testo_span = span.get("text", "")
                         color = span.get("color", 0)
@@ -129,13 +136,14 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
                         is_bold = bool(flags & 16) or "bold" in font_name
                         target_font = "hebo" if is_bold else "helv"
                         
-                        # 1) Modifica riga "Key:" o "Tonalità:"
+                        origin = fitz.Point(span["origin"])
+                        rect = fitz.Rect(span["bbox"])
+                        new_span_text = testo_span
+                        
                         match_key_span = re.search(r"(Key|Tonalità|Tonalita)[:\s]+([A-Za-z#b\-]+)", testo_span, flags=re.IGNORECASE)
                         if match_key_span:
-                            rect = fitz.Rect(span["bbox"])
                             original_key_text = match_key_span.group(0)
                             prefix_found = match_key_span.group(1)
-                            
                             base_key = tonalita_originale_pura.replace('b', '').replace('#', '').replace('m', '').replace('-', '')
                             is_key_upper = base_key.isupper() if len(base_key) > 0 else False
                             
@@ -152,56 +160,30 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
                             new_key_text = f"{prefix_found}: {nuova_chiave_str}"
                             if capo_tasto:
                                 new_key_text += f" | Capo: {capo_tasto}"
-                                
-                            page.add_redact_annot(rect, fill=(1,1,1))
-                            nuovo_testo_riga = testo_span.replace(original_key_text, new_key_text)
+                            new_span_text = testo_span.replace(original_key_text, new_key_text)
+                        else:
+                            is_colored = color != 0 and color != 0xFFFFFF
+                            if is_colored or (color == 0 and is_bold):
+                                if not ("http://" in testo_span or "https://" in testo_span or "www." in testo_span):
+                                    pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
+                                    pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
+                                    def replace_chord(m):
+                                        return get_transposed_chord(m.group(1), semitoni, scala_riferimento)
+                                    new_span_text = re.sub(pattern_accordo, replace_chord, testo_span, flags=re.IGNORECASE)
+                        
+                        if new_span_text != testo_span or shift_x_accum != 0:
+                            # Se c'è solo uno spazio vuoto (o quasi) evito di sbiancare inutilmente, ma sposto comunque
+                            if testo_span.strip() != "":
+                                page.add_redact_annot(rect, fill=(1,1,1))
+                            new_origin = fitz.Point(origin.x + shift_x_accum, origin.y)
                             font_size = span["size"]
                             color_rgb = fitz.sRGB_to_pdf(color)
-                            origin = fitz.Point(span["origin"])
+                            if new_span_text.strip() != "":
+                                insertions.append((new_origin, new_span_text, font_size, color_rgb, target_font))
                             
-                            insertions.append((origin, nuovo_testo_riga, font_size, color_rgb, target_font))
-                            continue
-                                
-                        # 2) Modifica Accordi
-                        # Vecchio template: accordi rossi (colorati). Ancora più vecchio: neri ma in GRASSETTO (bold).
-                        # Ignoriamo il testo nero normale per evitare di trasporre le parole del testo (es. "MI", "LA").
-                        is_colored = color != 0 and color != 0xFFFFFF
-                        
-                        if is_colored or (color == 0 and is_bold):
-                            # Se è un rigo di testo (es. "MI SCELSE" in grassetto), ignoriamolo!
-                            if is_lyric_span(testo_span):
-                                continue
-                                
-                            # Protezione per i link YouTube (spesso in blu)
-                            if "http://" in testo_span or "https://" in testo_span or "www." in testo_span:
-                                continue
-                                
-                            pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
-                            # Usiamo (?<![A-Za-z]) e (?![A-Za-z]) al posto di \b per evitare problemi con il #
-                            pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
-                            
-                            def replace_chord(m):
-                                return get_transposed_chord(m.group(1), semitoni, scala_riferimento)
-                                
-                            new_span_text = re.sub(pattern_accordo, replace_chord, testo_span, flags=re.IGNORECASE)
-                            
-                            if new_span_text != testo_span:
-                                rect = fitz.Rect(span["bbox"])
-                                page.add_redact_annot(rect, fill=(1,1,1))
-                                
-                                font_size = span["size"]
-                                color_rgb = fitz.sRGB_to_pdf(color)
-                                origin = fitz.Point(span["origin"])
-                                
-                                # Calcoliamo la differenza di larghezza per evitare sovrapposizioni
-                                old_width = fitz.get_text_length(testo_span, fontname=target_font, fontsize=font_size)
-                                new_width = fitz.get_text_length(new_span_text, fontname=target_font, fontsize=font_size)
-                                
-                                if new_width > old_width * 1.02:
-                                    # Riduciamo proporzionalmente il font per mantenere l'ingombro originale
-                                    font_size = font_size * (old_width / new_width)
-                                
-                                insertions.append((origin, new_span_text, font_size, color_rgb, target_font))
+                            old_width = fitz.get_text_length(testo_span, fontname=target_font, fontsize=font_size)
+                            new_width = fitz.get_text_length(new_span_text, fontname=target_font, fontsize=font_size)
+                            shift_x_accum += (new_width - old_width)
                                 
         page.apply_redactions()
         

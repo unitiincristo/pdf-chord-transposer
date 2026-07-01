@@ -97,4 +97,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.1.5 - Fix testi trasposti ed overlap accordi continui")
+st.caption("Versione 1.1.6 - Fix allineamento accordi multipli (Senza ridimensionamento)")
