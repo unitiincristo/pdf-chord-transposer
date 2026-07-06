@@ -78,7 +78,7 @@ def is_lyric_span(text):
         return True
     return False
 
-def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
+def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=None):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     
     # 1. Trova la tonalità originale
@@ -160,6 +160,8 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None):
                             new_key_text = f"{prefix_found}: {nuova_chiave_str}"
                             if capo_tasto:
                                 new_key_text += f" | Capo: {capo_tasto}"
+                            if piano_trans:
+                                new_key_text += f" | Piano: {piano_trans}"
                             new_span_text = testo_span.replace(original_key_text, new_key_text)
                         else:
                             is_colored = color != 0 and color != 0xFFFFFF

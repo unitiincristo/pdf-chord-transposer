@@ -47,11 +47,25 @@ uploaded_file = st.file_uploader("Scegli un file PDF", type="pdf")
 tonalita = ["DO", "DO#", "REb", "RE", "RE#", "MIb", "MI", "FA", "FA#", "SOLb", "SOL", "SOL#", "LAb", "LA", "LA#", "SIb", "SI"]
 obiettivo = st.selectbox("Seleziona la Tonalità di Destinazione", tonalita, index=3) # Default su RE
 
-# Aggiunta opzionale del Capotasto
-usa_capotasto = st.checkbox("Aggiungi indicazione Capotasto (Opzionale)")
-capo_tasto = None
-if usa_capotasto:
-    capo_tasto = st.number_input("Seleziona il tasto", min_value=1, max_value=12, value=3)
+# Aggiunte opzionali per strumenti
+st.markdown("### Indicazioni Strumenti (Opzionale)")
+col1, col2 = st.columns(2)
+with col1:
+    usa_capotasto = st.checkbox("🎸 Capotasto (Chitarra)")
+    capo_tasto = None
+    if usa_capotasto:
+        capo_tasto = st.number_input("Tasto Capotasto", min_value=1, max_value=12, value=3)
+
+with col2:
+    usa_piano = st.checkbox("🎹 Transpose (Piano)")
+    piano_trans = None
+    if usa_piano:
+        col2a, col2b = st.columns(2)
+        with col2a:
+            piano_segno = st.selectbox("Direzione", ["+", "-"])
+        with col2b:
+            piano_val = st.number_input("Semitoni", min_value=1, max_value=12, value=1)
+        piano_trans = f"{piano_segno}{piano_val}"
 
 if uploaded_file is not None:
     st.success("File caricato correttamente!")
@@ -64,7 +78,7 @@ if uploaded_file is not None:
                 pdf_bytes = uploaded_file.read()
                 
                 # Chiama la logica di elaborazione
-                new_pdf_bytes, tonalita_originale = transponi_pdf(pdf_bytes, obiettivo, capo_tasto)
+                new_pdf_bytes, tonalita_originale = transponi_pdf(pdf_bytes, obiettivo, capo_tasto, piano_trans)
                 
                 st.success(f"Trasposizione completata da {tonalita_originale} a {obiettivo}!")
                 
@@ -97,4 +111,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.1.6 - Fix allineamento accordi multipli (Senza ridimensionamento)")
+st.caption("Versione 1.2.0 - Aggiunta opzioni Transpose Piano e layout migliorato")
