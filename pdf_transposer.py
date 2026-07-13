@@ -124,6 +124,63 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                     full_line_text = "".join([span.get("text", "") for span in line.get("spans", [])])
                     has_key = bool(re.search(r"(Key|Tonalità|Tonalita)[:\s]+([A-Za-z#b\-]+)", full_line_text, flags=re.IGNORECASE))
                     
+                    if has_key:
+                        match_key_full = re.search(r"(Key|Tonalità|Tonalita)[:\s]+([A-Za-z#b\-]+)", full_line_text, flags=re.IGNORECASE)
+                        nota_originale = match_key_full.group(2)
+                        
+                        base_key = tonalita_originale_pura.replace('b', '').replace('#', '').replace('m', '').replace('-', '')
+                        is_key_upper = base_key.isupper() if len(base_key) > 0 else False
+                        minor_suffix = ""
+                        if "m" in tonalita_originale: minor_suffix = "m"
+                        elif "-" in tonalita_originale: minor_suffix = "-"
+                        nuova_chiave_str = tonalita_obiettivo_norm + minor_suffix
+                        if not is_key_upper: nuova_chiave_str = tonalita_obiettivo_norm.capitalize() + minor_suffix
+                        
+                        spans = line.get("spans", [])
+                        shift_x_accum = 0
+                        for span in spans:
+                            testo_span = span.get("text", "")
+                            rect = fitz.Rect(span["bbox"])
+                            origin = fitz.Point(span["origin"])
+                            
+                            pattern_nota_orig = rf"(?<![A-Za-z]){re.escape(nota_originale)}(?![A-Za-z])"
+                            new_span_text = re.sub(pattern_nota_orig, nuova_chiave_str, testo_span, flags=re.IGNORECASE)
+                            
+                            font_name = span.get("font", "").lower()
+                            is_bold = bool(span.get("flags", 0) & 16) or "bold" in font_name
+                            target_font = "hebo" if is_bold else "helv"
+                            font_size = span["size"]
+                            color_rgb = fitz.sRGB_to_pdf(span.get("color", 0))
+                            
+                            if new_span_text != testo_span or shift_x_accum != 0:
+                                if testo_span.strip() != "":
+                                    page.add_redact_annot(rect, fill=(1,1,1))
+                                new_origin = fitz.Point(origin.x + shift_x_accum, origin.y)
+                                if new_span_text.strip() != "":
+                                    insertions.append((new_origin, new_span_text, font_size, color_rgb, target_font))
+                                
+                                old_width = fitz.get_text_length(testo_span, fontname=target_font, fontsize=font_size)
+                                new_width = fitz.get_text_length(new_span_text, fontname=target_font, fontsize=font_size)
+                                shift_x_accum += (new_width - old_width)
+                                
+                        extra_text = ""
+                        if capo_tasto: extra_text += f" | Capo: {capo_tasto}"
+                        if piano_trans: extra_text += f" | Piano: {piano_trans}"
+                        
+                        if extra_text and spans:
+                            last_span = spans[-1]
+                            last_rect = fitz.Rect(last_span["bbox"])
+                            x_end = last_rect.x1 + shift_x_accum + 3
+                            y_origin = last_span["origin"][1]
+                            
+                            font_name = last_span.get("font", "").lower()
+                            is_bold = bool(last_span.get("flags", 0) & 16) or "bold" in font_name
+                            target_font = "hebo" if is_bold else "helv"
+                            
+                            insertions.append((fitz.Point(x_end, y_origin), extra_text, last_span["size"], fitz.sRGB_to_pdf(last_span.get("color", 0)), target_font))
+                            
+                        continue
+                        
                     if not has_key and is_lyric_span(full_line_text):
                         continue
                         
@@ -140,41 +197,16 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                         rect = fitz.Rect(span["bbox"])
                         new_span_text = testo_span
                         
-                        match_key_span = re.search(r"(Key|Tonalità|Tonalita)[:\s]+([A-Za-z#b\-]+)", testo_span, flags=re.IGNORECASE)
-                        if match_key_span:
-                            original_key_text = match_key_span.group(0)
-                            prefix_found = match_key_span.group(1)
-                            base_key = tonalita_originale_pura.replace('b', '').replace('#', '').replace('m', '').replace('-', '')
-                            is_key_upper = base_key.isupper() if len(base_key) > 0 else False
-                            
-                            minor_suffix = ""
-                            if "m" in tonalita_originale:
-                                minor_suffix = "m"
-                            elif "-" in tonalita_originale:
-                                minor_suffix = "-"
-                            
-                            nuova_chiave_str = tonalita_obiettivo_norm + minor_suffix
-                            if not is_key_upper:
-                                nuova_chiave_str = tonalita_obiettivo_norm.capitalize() + minor_suffix
-                            
-                            new_key_text = f"{prefix_found}: {nuova_chiave_str}"
-                            if capo_tasto:
-                                new_key_text += f" | Capo: {capo_tasto}"
-                            if piano_trans:
-                                new_key_text += f" | Piano: {piano_trans}"
-                            new_span_text = testo_span.replace(original_key_text, new_key_text)
-                        else:
-                            is_colored = color != 0 and color != 0xFFFFFF
-                            if is_colored or (color == 0 and is_bold):
-                                if not ("http://" in testo_span or "https://" in testo_span or "www." in testo_span):
-                                    pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
-                                    pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
-                                    def replace_chord(m):
-                                        return get_transposed_chord(m.group(1), semitoni, scala_riferimento)
-                                    new_span_text = re.sub(pattern_accordo, replace_chord, testo_span, flags=re.IGNORECASE)
+                        is_colored = color != 0 and color != 0xFFFFFF
+                        if is_colored or (color == 0 and is_bold):
+                            if not ("http://" in testo_span or "https://" in testo_span or "www." in testo_span):
+                                pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
+                                pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
+                                def replace_chord(m):
+                                    return get_transposed_chord(m.group(1), semitoni, scala_riferimento)
+                                new_span_text = re.sub(pattern_accordo, replace_chord, testo_span, flags=re.IGNORECASE)
                         
                         if new_span_text != testo_span or shift_x_accum != 0:
-                            # Se c'è solo uno spazio vuoto (o quasi) evito di sbiancare inutilmente, ma sposto comunque
                             if testo_span.strip() != "":
                                 page.add_redact_annot(rect, fill=(1,1,1))
                             new_origin = fitz.Point(origin.x + shift_x_accum, origin.y)

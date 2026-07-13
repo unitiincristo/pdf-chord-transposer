@@ -111,4 +111,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.2.0 - Aggiunta opzioni Transpose Piano e layout migliorato")
+st.caption("Versione 1.2.1 - Fix indicazioni strumenti su testi formattati separatamente")
