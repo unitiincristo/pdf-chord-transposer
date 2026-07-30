@@ -58,15 +58,17 @@ def is_chord(text):
 
 def is_lyric_span(text):
     words = text.split()
-    musical_keywords = {"intro", "vamp", "coro", "verso", "bridge", "instrumental", "ending", "pre-coro", "bpm", "tempo", "key", "tonalita", "tonalità"}
+    musical_keywords = {"intro", "vamp", "coro", "verso", "bridge", "instrumental", "ending", "pre-coro", "bpm", "tempo", "key", "tonalita", "tonalità", "volta", "volte", "x"}
     
     for w in words:
         w_clean = re.sub(r'^[\(\[\|\.,;:\-\/]+|[\)\]\|\.,;:\-\/]+$', '', w).lower()
         if not w_clean:
             continue
-        if re.match(r'^x\d+$', w_clean):
+        if re.match(r'^x?\d+x?$', w_clean):
             continue
-        if w_clean in musical_keywords or w_clean.isdigit():
+        if re.match(r'^\d+[\^a-z°]*$', w_clean):
+            continue
+        if w_clean in musical_keywords:
             continue
             
         pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
