@@ -187,12 +187,19 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                     if has_key:
                         is_header = False
                         
-        # Mappa i font originali incorporati nel documento per non perderli
+        # Mappa i font originali incorporati nel documento estraendone i byte e reinserendoli come nuovi font validi
         font_map = {}
         for f in doc[0].get_fonts():
+            xref = f[0]
             basefont = f[3]
-            if "+" in basefont: basefont = basefont.split("+")[1]
-            font_map[basefont] = f[4]
+            clean_basefont = basefont.split("+")[1] if "+" in basefont else basefont
+            try:
+                font_data = doc.extract_font(xref)
+                if font_data and len(font_data) >= 4 and font_data[3]:
+                    new_ref = doc[0].insert_font(fontname=f"F{xref}", fontbuffer=font_data[3])
+                    font_map[clean_basefont] = new_ref
+            except:
+                pass
             
         # Sbianca tutto il testo in modo nativo rimuovendo solo gli oggetti di testo (niente rettangoli bianchi)
         for page in doc:
@@ -238,10 +245,13 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                 pt = fitz.Point(orig_x + shift_x, new_y + (orig_y - item["orig_y"]))
                 color = fitz.sRGB_to_pdf(span["color"])
                 
-                if text != span["text"] and target_font in ["hebo", "helv"]:
+                if text != span["text"]:
                     try:
-                        old_w = fitz.get_text_length(span["text"], fontname=target_font, fontsize=span["size"])
-                        new_w = fitz.get_text_length(text, fontname=target_font, fontsize=span["size"])
+                        # Fallback su helv per la misurazione della larghezza, in quanto get_text_length 
+                        # non accetta reference personalizzate senza file, ed è sufficiente come approssimazione
+                        measure_font = "hebo" if ("bold" in span_font.lower() or bool(span["flags"] & 16)) else "helv"
+                        old_w = fitz.get_text_length(span["text"], fontname=measure_font, fontsize=span["size"])
+                        new_w = fitz.get_text_length(text, fontname=measure_font, fontsize=span["size"])
                         shift_x += (new_w - old_w)
                     except:
                         pass

@@ -122,4 +122,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.4.3 - Risolti artefatti grafici con i PDF originali (No overlapping). Map Font Nativo per font identici e rimozione Piano/Capo.")
+st.caption("Versione 1.4.4 - Fix FontBuffer error estraendo e iniettando nativamente i font")
