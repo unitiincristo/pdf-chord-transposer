@@ -187,8 +187,8 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                     if has_key:
                         is_header = False
                         
-        # Mappa i font originali incorporati nel documento estraendone i byte e reinserendoli come nuovi font validi
-        font_map = {}
+        # Raccoglie i buffer dei font originali incorporati per preservare la tipografia originale
+        font_buffers = {}
         for f in doc[0].get_fonts():
             xref = f[0]
             basefont = f[3]
@@ -196,9 +196,7 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
             try:
                 font_data = doc.extract_font(xref)
                 if font_data and len(font_data) >= 4 and font_data[3]:
-                    font_ref_name = f"F{xref}"
-                    doc[0].insert_font(fontname=font_ref_name, fontbuffer=font_data[3])
-                    font_map[clean_basefont] = font_ref_name
+                    font_buffers[clean_basefont] = (f"F{xref}", font_data[3])
             except:
                 pass
             
@@ -236,28 +234,33 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                 span_font = span["font"]
                 if "+" in span_font: span_font = span_font.split("+")[1]
                 
-                target_font = font_map.get(span_font)
-                if not target_font:
-                    is_bold = bool(span["flags"] & 16) or "bold" in span_font.lower()
-                    target_font = "hebo" if is_bold else "helv"
-                    text = text.replace("’", "'").replace("‘", "'")
-                    
+                is_bold = bool(span["flags"] & 16) or "bold" in span_font.lower()
+                fallback_font = "hebo" if is_bold else "helv"
+                clean_text_fallback = text.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"').replace("–", "-")
+                
                 orig_x, orig_y = span["origin"]
                 pt = fitz.Point(orig_x + shift_x, new_y + (orig_y - item["orig_y"]))
                 color = fitz.sRGB_to_pdf(span["color"])
                 
                 if text != span["text"]:
                     try:
-                        # Fallback su helv per la misurazione della larghezza, in quanto get_text_length 
-                        # non accetta reference personalizzate senza file, ed è sufficiente come approssimazione
-                        measure_font = "hebo" if ("bold" in span_font.lower() or bool(span["flags"] & 16)) else "helv"
-                        old_w = fitz.get_text_length(span["text"], fontname=measure_font, fontsize=span["size"])
-                        new_w = fitz.get_text_length(text, fontname=measure_font, fontsize=span["size"])
+                        old_w = fitz.get_text_length(span["text"], fontname=fallback_font, fontsize=span["size"])
+                        new_w = fitz.get_text_length(text, fontname=fallback_font, fontsize=span["size"])
                         shift_x += (new_w - old_w)
                     except:
                         pass
                 
-                page1.insert_text(pt, text, fontsize=span["size"], fontname=target_font, color=color)
+                inserted = False
+                if span_font in font_buffers:
+                    fname, fbuf = font_buffers[span_font]
+                    try:
+                        page1.insert_text(pt, text, fontsize=span["size"], fontname=fname, fontbuffer=fbuf, color=color)
+                        inserted = True
+                    except Exception:
+                        inserted = False
+                        
+                if not inserted:
+                    page1.insert_text(pt, clean_text_fallback, fontsize=span["size"], fontname=fallback_font, color=color)
                 
         while len(doc) > 1:
             doc.delete_page(1)
