@@ -216,17 +216,8 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                                         pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
                                         new_span_text = re.sub(pattern_accordo, "", new_span_text, flags=re.IGNORECASE)
                                 
-                                # In modalità solo testo puliamo TUTTI gli span da simboli musicali e ripetizioni
+                                # In modalità solo testo puliamo TUTTI gli span da simboli musicali come pipe e slash
                                 new_span_text = new_span_text.replace("|", "").replace("/", "")
-                                new_span_text = re.sub(r'\(\s*[xX]\s*\d+\s*\)', '', new_span_text, flags=re.IGNORECASE)
-                                new_span_text = re.sub(r'\b[xX]\d+\b', '', new_span_text, flags=re.IGNORECASE)
-                                new_span_text = re.sub(r'\(\s*\d+\s*[xX]\s*\)', '', new_span_text, flags=re.IGNORECASE)
-                                new_span_text = re.sub(r'\(\s*\d+\^\s*volta\s*\)', '', new_span_text, flags=re.IGNORECASE)
-                                # Pulisce eventuali due punti isolati (es: dopo "INTRO x2:" rimosso l'x2)
-                                if new_span_text.strip() == ":":
-                                    new_span_text = ""
-                                else:
-                                    new_span_text = re.sub(r'\b(INTRO|CHORUS|CORO|VERSE|VERSO|BRIDGE|INTERLUDE)\s*:\s*$', r'\1', new_span_text, flags=re.IGNORECASE)
                             else:
                                 if is_colored or (color == 0 and is_bold):
                                     if not ("http://" in testo_span or "https://" in testo_span or "www." in testo_span):
