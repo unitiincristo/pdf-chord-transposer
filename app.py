@@ -122,4 +122,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.3.2 - Mantenute le annotazioni di ripetizione (x2) nella modalità 'Solo Testo'")
+st.caption("Versione 1.4.0 - Compattazione intelligente del testo su una sola pagina e rimozione spazi vuoti nella modalità 'Solo Testo'")
