@@ -196,8 +196,9 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
             try:
                 font_data = doc.extract_font(xref)
                 if font_data and len(font_data) >= 4 and font_data[3]:
-                    new_ref = doc[0].insert_font(fontname=f"F{xref}", fontbuffer=font_data[3])
-                    font_map[clean_basefont] = new_ref
+                    font_ref_name = f"F{xref}"
+                    doc[0].insert_font(fontname=font_ref_name, fontbuffer=font_data[3])
+                    font_map[clean_basefont] = font_ref_name
             except:
                 pass
             

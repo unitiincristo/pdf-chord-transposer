@@ -122,4 +122,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.4.4 - Fix FontBuffer error estraendo e iniettando nativamente i font")
+st.caption("Versione 1.4.5 - Fix crash 'int' object has no attribute 'startswith' for PyMuPDF insert_font")
