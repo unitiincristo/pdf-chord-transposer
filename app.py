@@ -122,4 +122,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.3.0 - Aggiunta funzionalità 'Solo Testo' per rimuovere gli accordi")
+st.caption("Versione 1.3.1 - Rimozione totale di pipe, slash e annotazioni musicali nella modalità 'Solo Testo'")

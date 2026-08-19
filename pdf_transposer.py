@@ -58,7 +58,7 @@ def is_chord(text):
 
 def is_lyric_span(text):
     words = text.split()
-    musical_keywords = {"intro", "vamp", "coro", "verso", "bridge", "instrumental", "ending", "pre-coro", "bpm", "tempo", "key", "tonalita", "tonalità", "volta", "volte", "x"}
+    musical_keywords = {"intro", "vamp", "coro", "verso", "bridge", "instrumental", "ending", "pre-coro", "bpm", "tempo", "key", "tonalita", "tonalità", "volta", "volte", "x", "chorus", "interlude"}
     
     for w in words:
         w_clean = re.sub(r'^[\(\[\|\.,;:\-\/]+|[\)\]\|\.,;:\-\/]+$', '', w).lower()
@@ -190,7 +190,8 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                             
                         continue
                         
-                    if not has_key and is_lyric_span(full_line_text):
+                    is_lyric = is_lyric_span(full_line_text)
+                    if not solo_testo and not has_key and is_lyric:
                         continue
                         
                     shift_x_accum = 0
@@ -207,17 +208,33 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                         new_span_text = testo_span
                         
                         is_colored = color != 0 and color != 0xFFFFFF
-                        if is_colored or (color == 0 and is_bold):
-                            if not ("http://" in testo_span or "https://" in testo_span or "www." in testo_span):
-                                pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
-                                pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
+                        if not has_key:
+                            if solo_testo:
+                                if is_colored or (color == 0 and is_bold):
+                                    if not ("http://" in testo_span or "https://" in testo_span or "www." in testo_span):
+                                        pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
+                                        pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
+                                        new_span_text = re.sub(pattern_accordo, "", new_span_text, flags=re.IGNORECASE)
                                 
-                                if solo_testo:
-                                    new_span_text = re.sub(pattern_accordo, "", testo_span, flags=re.IGNORECASE)
+                                # In modalità solo testo puliamo TUTTI gli span da simboli musicali e ripetizioni
+                                new_span_text = new_span_text.replace("|", "").replace("/", "")
+                                new_span_text = re.sub(r'\(\s*[xX]\s*\d+\s*\)', '', new_span_text, flags=re.IGNORECASE)
+                                new_span_text = re.sub(r'\b[xX]\d+\b', '', new_span_text, flags=re.IGNORECASE)
+                                new_span_text = re.sub(r'\(\s*\d+\s*[xX]\s*\)', '', new_span_text, flags=re.IGNORECASE)
+                                new_span_text = re.sub(r'\(\s*\d+\^\s*volta\s*\)', '', new_span_text, flags=re.IGNORECASE)
+                                # Pulisce eventuali due punti isolati (es: dopo "INTRO x2:" rimosso l'x2)
+                                if new_span_text.strip() == ":":
+                                    new_span_text = ""
                                 else:
-                                    def replace_chord(m):
-                                        return get_transposed_chord(m.group(1), semitoni, scala_riferimento)
-                                    new_span_text = re.sub(pattern_accordo, replace_chord, testo_span, flags=re.IGNORECASE)
+                                    new_span_text = re.sub(r'\b(INTRO|CHORUS|CORO|VERSE|VERSO|BRIDGE|INTERLUDE)\s*:\s*$', r'\1', new_span_text, flags=re.IGNORECASE)
+                            else:
+                                if is_colored or (color == 0 and is_bold):
+                                    if not ("http://" in testo_span or "https://" in testo_span or "www." in testo_span):
+                                        pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
+                                        pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
+                                        def replace_chord(m):
+                                            return get_transposed_chord(m.group(1), semitoni, scala_riferimento)
+                                        new_span_text = re.sub(pattern_accordo, replace_chord, new_span_text, flags=re.IGNORECASE)
                         
                         if new_span_text != testo_span or shift_x_accum != 0:
                             if testo_span.strip() != "":
