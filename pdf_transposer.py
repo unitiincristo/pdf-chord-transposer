@@ -80,7 +80,7 @@ def is_lyric_span(text):
         return True
     return False
 
-def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=None):
+def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=None, solo_testo=False):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     
     # 1. Trova la tonalità originale
@@ -105,13 +105,17 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
     orig_base = tonalita_originale.replace("m", "").replace("-", "")
     obiett_base = tonalita_obiettivo_norm.replace("m", "").replace("-", "")
     
-    if orig_base not in MAPPA_NOTE or obiett_base not in MAPPA_NOTE:
-        raise ValueError(f"Tonalità non valida. Originale: {tonalita_originale}, Obiettivo: {tonalita_obiettivo}")
+    if not solo_testo:
+        if orig_base not in MAPPA_NOTE or obiett_base not in MAPPA_NOTE:
+            raise ValueError(f"Tonalità non valida. Originale: {tonalita_originale}, Obiettivo: {tonalita_obiettivo}")
 
-    # 2. Calcola semitoni e scala
-    semitoni = (MAPPA_NOTE[obiett_base] - MAPPA_NOTE[orig_base]) % 12
-    usa_bemolli = obiett_base in ["FA", "SIb", "MIb", "LAb", "REb"]
-    scala_riferimento = NOTE_BEMOLLI if usa_bemolli else NOTE_DIESIS
+        # 2. Calcola semitoni e scala
+        semitoni = (MAPPA_NOTE[obiett_base] - MAPPA_NOTE[orig_base]) % 12
+        usa_bemolli = obiett_base in ["FA", "SIb", "MIb", "LAb", "REb"]
+        scala_riferimento = NOTE_BEMOLLI if usa_bemolli else NOTE_DIESIS
+    else:
+        semitoni = 0
+        scala_riferimento = NOTE_DIESIS
 
     # 3. Itera su ogni pagina per fare la replace
     for page_num in range(len(doc)):
@@ -127,6 +131,9 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                     has_key = bool(re.search(r"(Key|Tonalità|Tonalita)[:\s]+([A-Za-z#b\-]+)", full_line_text, flags=re.IGNORECASE))
                     
                     if has_key:
+                        if solo_testo:
+                            continue
+                            
                         match_key_full = re.search(r"(Key|Tonalità|Tonalita)[:\s]+([A-Za-z#b\-]+)", full_line_text, flags=re.IGNORECASE)
                         nota_originale = match_key_full.group(2)
                         
@@ -204,9 +211,13 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                             if not ("http://" in testo_span or "https://" in testo_span or "www." in testo_span):
                                 pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
                                 pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
-                                def replace_chord(m):
-                                    return get_transposed_chord(m.group(1), semitoni, scala_riferimento)
-                                new_span_text = re.sub(pattern_accordo, replace_chord, testo_span, flags=re.IGNORECASE)
+                                
+                                if solo_testo:
+                                    new_span_text = re.sub(pattern_accordo, "", testo_span, flags=re.IGNORECASE)
+                                else:
+                                    def replace_chord(m):
+                                        return get_transposed_chord(m.group(1), semitoni, scala_riferimento)
+                                    new_span_text = re.sub(pattern_accordo, replace_chord, testo_span, flags=re.IGNORECASE)
                         
                         if new_span_text != testo_span or shift_x_accum != 0:
                             if testo_span.strip() != "":

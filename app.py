@@ -67,38 +67,49 @@ with col2:
             piano_val = st.number_input("Semitoni", min_value=1, max_value=12, value=1)
         piano_trans = f"{piano_segno}{piano_val}"
 
+# Opzione per rimuovere tutti gli accordi
+st.markdown("### Solo Testo (Opzionale)")
+solo_testo = st.checkbox("📖 Rimuovi tutti gli accordi (esporta solo testo)")
+
 if uploaded_file is not None:
     st.success("File caricato correttamente!")
     
     # Bottone per trasporre
-    if st.button("Trasponi PDF"):
-        with st.spinner("Trasposizione in corso..."):
+    bottone_testo = "Genera PDF Solo Testo" if solo_testo else "Trasponi PDF"
+    if st.button(bottone_testo):
+        with st.spinner("Elaborazione in corso..."):
             try:
                 # Legge il PDF in byte
                 pdf_bytes = uploaded_file.read()
                 
                 # Chiama la logica di elaborazione
-                new_pdf_bytes, tonalita_originale = transponi_pdf(pdf_bytes, obiettivo, capo_tasto, piano_trans)
+                new_pdf_bytes, tonalita_originale = transponi_pdf(pdf_bytes, obiettivo, capo_tasto, piano_trans, solo_testo)
                 
-                st.success(f"Trasposizione completata da {tonalita_originale} a {obiettivo}!")
+                if solo_testo:
+                    st.success("Testo ripulito dagli accordi con successo!")
+                else:
+                    st.success(f"Trasposizione completata da {tonalita_originale} a {obiettivo}!")
                 
                 # Generazione intelligente del nuovo nome file
                 original_name = uploaded_file.name
                 import re
                 
-                # Usiamo lookarounds (?<![A-Za-z]) e (?![A-Za-z]) per evitare i limiti di \b con caratteri speciali come # o -
-                pattern = rf"(?<![A-Za-z]){re.escape(tonalita_originale)}(?![A-Za-z])"
-                if re.search(pattern, original_name, flags=re.IGNORECASE):
-                    new_file_name = re.sub(pattern, obiettivo, original_name, flags=re.IGNORECASE)
+                if solo_testo:
+                    new_file_name = f"{original_name.replace('.pdf', '')}_SoloTesto.pdf"
                 else:
-                    # Se non c'è la tonalità esatta, proviamo con la nota base (es. se nel nome c'è "SI" ma la tonalità è "SI-")
-                    base_orig = tonalita_originale.replace("m", "").replace("-", "")
-                    pattern_base = rf"(?<![A-Za-z]){re.escape(base_orig)}(?![A-Za-z])"
-                    if re.search(pattern_base, original_name, flags=re.IGNORECASE):
-                        new_file_name = re.sub(pattern_base, obiettivo, original_name, flags=re.IGNORECASE)
+                    # Usiamo lookarounds (?<![A-Za-z]) e (?![A-Za-z]) per evitare i limiti di \b con caratteri speciali come # o -
+                    pattern = rf"(?<![A-Za-z]){re.escape(tonalita_originale)}(?![A-Za-z])"
+                    if re.search(pattern, original_name, flags=re.IGNORECASE):
+                        new_file_name = re.sub(pattern, obiettivo, original_name, flags=re.IGNORECASE)
                     else:
-                        # Se non c'è nel nome, aggiungiamo semplicemente il suffisso alla fine
-                        new_file_name = f"{original_name.replace('.pdf', '')}_{obiettivo}.pdf"
+                        # Se non c'è la tonalità esatta, proviamo con la nota base (es. se nel nome c'è "SI" ma la tonalità è "SI-")
+                        base_orig = tonalita_originale.replace("m", "").replace("-", "")
+                        pattern_base = rf"(?<![A-Za-z]){re.escape(base_orig)}(?![A-Za-z])"
+                        if re.search(pattern_base, original_name, flags=re.IGNORECASE):
+                            new_file_name = re.sub(pattern_base, obiettivo, original_name, flags=re.IGNORECASE)
+                        else:
+                            # Se non c'è nel nome, aggiungiamo semplicemente il suffisso alla fine
+                            new_file_name = f"{original_name.replace('.pdf', '')}_{obiettivo}.pdf"
                 
                 # Bottone per il download
                 st.download_button(
@@ -111,4 +122,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.2.2 - Fix trasposizione accordi ignorati per note con (1^ volta)")
+st.caption("Versione 1.3.0 - Aggiunta funzionalità 'Solo Testo' per rimuovere gli accordi")
