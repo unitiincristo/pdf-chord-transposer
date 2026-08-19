@@ -119,12 +119,11 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
 
     # 3. Elaborazione
     if solo_testo:
-        doc_orig = fitz.open(stream=pdf_bytes, filetype="pdf")
         kept_lines = []
         is_header = True
         
-        for page_num in range(len(doc_orig)):
-            page = doc_orig[page_num]
+        for page_num in range(len(doc)):
+            page = doc[page_num]
             for block in page.get_text("dict").get("blocks", []):
                 if block.get("type") != 0: continue
                 for line in block.get("lines", []):
@@ -157,15 +156,24 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                                 keep = True
                                 
                         if keep:
+                            if has_key:
+                                text = re.sub(r'\s*\|\s*Piano:[^|]*', '', text, flags=re.IGNORECASE)
+                                text = re.sub(r'\s*\|\s*Capo:[^|]*', '', text, flags=re.IGNORECASE)
+                                if text.strip() == "": continue
+                                
                             line_kept_spans.append({
-                                "page_num": page_num,
-                                "bbox": fitz.Rect(span["bbox"]),
-                                "size": span["size"]
+                                "text": text,
+                                "size": span["size"],
+                                "origin": span["origin"],
+                                "color": span.get("color", 0),
+                                "font": span.get("font", ""),
+                                "flags": span.get("flags", 0),
+                                "bbox": span["bbox"]
                             })
                             
                     if line_kept_spans:
-                        col_idx = 0 if line["bbox"][0] < doc_orig[0].rect.width / 2 else 1
-                        clean_line = "".join([s.get("text", "") for s in line.get("spans", [])]).strip().upper()
+                        col_idx = 0 if line["bbox"][0] < doc[0].rect.width / 2 else 1
+                        clean_line = "".join([s["text"] for s in line_kept_spans]).strip().upper()
                         is_section = any(clean_line.startswith(kw) for kw in ["VERSE", "CHORUS", "BRIDGE", "INTRO", "INTERLUDE", "CORO", "VERSO", "FINAL", "ENDING", "PRE CHORUS", "PRE-CHORUS", "VAMP"])
                         
                         kept_lines.append({
@@ -179,11 +187,18 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                     if has_key:
                         is_header = False
                         
-        # Sbianca tutto il testo mantenendo loghi e sfondi intatti
+        # Mappa i font originali incorporati nel documento per non perderli
+        font_map = {}
+        for f in doc[0].get_fonts():
+            basefont = f[3]
+            if "+" in basefont: basefont = basefont.split("+")[1]
+            font_map[basefont] = f[4]
+            
+        # Sbianca tutto il testo in modo nativo rimuovendo solo gli oggetti di testo (niente rettangoli bianchi)
         for page in doc:
             for block in page.get_text("dict").get("blocks", []):
                 if block.get("type") == 0:
-                    page.add_redact_annot(block["bbox"]) # Senza fill, rimuove solo il testo
+                    page.add_redact_annot(block["bbox"])
             page.apply_redactions(images=0) # 0 = PDF_REDACT_IMAGE_NONE
             
         page1 = doc[0]
@@ -202,18 +217,36 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
             else:
                 c = item["col_idx"]
                 if item["is_section"] and y_col[c] > header_bottom:
-                    y_col[c] += max_font * 0.8 # Spazio prima della sezione
+                    y_col[c] += max_font * 0.8
                 
                 new_y = y_col[c]
-                y_col[c] += max_font * 1.3 # Altezza riga
+                y_col[c] += max_font * 1.3
                 
+            shift_x = 0
             for span in spans:
-                orig_rect = span["bbox"]
-                shift_y = new_y - item["orig_y"]
-                new_rect = orig_rect + (0, shift_y, 0, shift_y)
+                text = span["text"]
+                span_font = span["font"]
+                if "+" in span_font: span_font = span_font.split("+")[1]
                 
-                # Disegna il testo ritagliandolo dal PDF originale, mantenendo font e vettori originali perfetti!
-                page1.show_pdf_page(new_rect, doc_orig, span["page_num"], clip=orig_rect)
+                target_font = font_map.get(span_font)
+                if not target_font:
+                    is_bold = bool(span["flags"] & 16) or "bold" in span_font.lower()
+                    target_font = "hebo" if is_bold else "helv"
+                    text = text.replace("’", "'").replace("‘", "'")
+                    
+                orig_x, orig_y = span["origin"]
+                pt = fitz.Point(orig_x + shift_x, new_y + (orig_y - item["orig_y"]))
+                color = fitz.sRGB_to_pdf(span["color"])
+                
+                if text != span["text"] and target_font in ["hebo", "helv"]:
+                    try:
+                        old_w = fitz.get_text_length(span["text"], fontname=target_font, fontsize=span["size"])
+                        new_w = fitz.get_text_length(text, fontname=target_font, fontsize=span["size"])
+                        shift_x += (new_w - old_w)
+                    except:
+                        pass
+                
+                page1.insert_text(pt, text, fontsize=span["size"], fontname=target_font, color=color)
                 
         while len(doc) > 1:
             doc.delete_page(1)

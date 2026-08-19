@@ -122,4 +122,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.4.2 - Riscrittura motore rendering Solo Testo per mantenimento font e vettori originali 1:1 e fixing section headers")
+st.caption("Versione 1.4.3 - Risolti artefatti grafici con i PDF originali (No overlapping). Map Font Nativo per font identici e rimozione Piano/Capo.")
