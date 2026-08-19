@@ -196,7 +196,9 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                 is_bold = bool(span.get("flags", 0) & 16) or "bold" in font_name
                 target_font = "hebo" if is_bold else "helv"
                 
-                pt = fitz.Point(span["origin"].x + shift_x, new_y + (span["origin"].y - item["orig_y"]))
+                orig_x, orig_y = span["origin"]
+                pt = fitz.Point(orig_x + shift_x, new_y + (orig_y - item["orig_y"]))
+                
                 color = fitz.sRGB_to_pdf(span.get("color", 0))
                 page1.insert_text(pt, text, fontsize=span["size"], fontname=target_font, color=color)
                 
