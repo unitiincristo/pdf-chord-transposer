@@ -122,4 +122,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.4.1 - Fix tuple error nella compattazione testo")
+st.caption("Versione 1.4.2 - Riscrittura motore rendering Solo Testo per mantenimento font e vettori originali 1:1 e fixing section headers")

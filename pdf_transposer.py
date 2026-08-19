@@ -119,11 +119,12 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
 
     # 3. Elaborazione
     if solo_testo:
+        doc_orig = fitz.open(stream=pdf_bytes, filetype="pdf")
         kept_lines = []
         is_header = True
         
-        for page_num in range(len(doc)):
-            page = doc[page_num]
+        for page_num in range(len(doc_orig)):
+            page = doc_orig[page_num]
             for block in page.get_text("dict").get("blocks", []):
                 if block.get("type") != 0: continue
                 for line in block.get("lines", []):
@@ -133,38 +134,57 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                     has_key = bool(re.search(r"(Key|Tonalità|Tonalita)[:\s]+([A-Za-z#b\-]+)", full_line_text, flags=re.IGNORECASE))
                     is_lyric = is_lyric_span(full_line_text)
                     
-                    if not has_key and not is_lyric:
-                        continue # Salta righe di accordi
-                        
-                    new_spans = []
+                    line_kept_spans = []
                     for span in line.get("spans", []):
                         text = span.get("text", "")
-                        if not has_key:
-                            text = text.replace("|", "").replace("/", "")
-                        if text.strip() != "":
-                            new_spans.append((span, text))
+                        clean_text = text.strip()
+                        
+                        if clean_text == "" or clean_text in ("|", "/", "//", "///", "||"):
+                            continue
                             
-                    if not new_spans: continue
-                    
-                    col_idx = 0 if line["bbox"][0] < doc[0].rect.width / 2 else 1
-                    
-                    kept_lines.append({
-                        "col_idx": col_idx,
-                        "spans": new_spans,
-                        "orig_y": line["bbox"][1],
-                        "has_key": has_key,
-                        "is_header": is_header
-                    })
-                    
+                        keep = False
+                        if is_header or has_key:
+                            keep = True
+                        elif is_lyric:
+                            keep = True
+                        else:
+                            clean_upper = clean_text.upper()
+                            is_span_section = any(clean_upper.startswith(kw) for kw in ["VERSE", "CHORUS", "BRIDGE", "INTRO", "INTERLUDE", "CORO", "VERSO", "FINAL", "ENDING", "PRE CHORUS", "PRE-CHORUS", "VAMP"])
+                            is_span_repeat = bool(re.search(r'\b[xX]\d+\b', clean_upper)) or "VOLTA" in clean_upper
+                            if is_span_section or is_span_repeat:
+                                keep = True
+                            if "http" in text.lower() or "www" in text.lower():
+                                keep = True
+                                
+                        if keep:
+                            line_kept_spans.append({
+                                "page_num": page_num,
+                                "bbox": fitz.Rect(span["bbox"]),
+                                "size": span["size"]
+                            })
+                            
+                    if line_kept_spans:
+                        col_idx = 0 if line["bbox"][0] < doc_orig[0].rect.width / 2 else 1
+                        clean_line = "".join([s.get("text", "") for s in line.get("spans", [])]).strip().upper()
+                        is_section = any(clean_line.startswith(kw) for kw in ["VERSE", "CHORUS", "BRIDGE", "INTRO", "INTERLUDE", "CORO", "VERSO", "FINAL", "ENDING", "PRE CHORUS", "PRE-CHORUS", "VAMP"])
+                        
+                        kept_lines.append({
+                            "col_idx": col_idx,
+                            "spans": line_kept_spans,
+                            "orig_y": line["bbox"][1],
+                            "is_header": is_header or has_key,
+                            "is_section": is_section
+                        })
+                        
                     if has_key:
                         is_header = False
                         
-        # Sbianca tutto il testo mantenendo loghi e sfondi
+        # Sbianca tutto il testo mantenendo loghi e sfondi intatti
         for page in doc:
             for block in page.get_text("dict").get("blocks", []):
                 if block.get("type") == 0:
-                    page.add_redact_annot(block["bbox"], fill=(1,1,1))
-            page.apply_redactions()
+                    page.add_redact_annot(block["bbox"]) # Senza fill, rimuove solo il testo
+            page.apply_redactions(images=0) # 0 = PDF_REDACT_IMAGE_NONE
             
         page1 = doc[0]
         y_col = [0, 0]
@@ -172,39 +192,28 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
         
         for item in kept_lines:
             spans = item["spans"]
-            max_font = max(s[0]["size"] for s in spans)
+            max_font = max(s["size"] for s in spans)
             
-            if item["is_header"] or item["has_key"]:
+            if item["is_header"]:
                 new_y = item["orig_y"]
                 header_bottom = max(header_bottom, new_y + max_font * 1.5)
                 y_col[0] = header_bottom
                 y_col[1] = header_bottom
             else:
                 c = item["col_idx"]
-                text_clean = "".join([s[1] for s in spans]).strip().upper()
-                is_section = any(text_clean.startswith(kw) for kw in ["VERSE", "CHORUS", "BRIDGE", "INTRO", "INTERLUDE", "CORO", "VERSO", "FINAL", "ENDING", "PRE CHORUS", "PRE-CHORUS", "VAMP"])
-                
-                if is_section and y_col[c] > header_bottom:
+                if item["is_section"] and y_col[c] > header_bottom:
                     y_col[c] += max_font * 0.8 # Spazio prima della sezione
                 
                 new_y = y_col[c]
                 y_col[c] += max_font * 1.3 # Altezza riga
                 
-            shift_x = 0
-            for span, text in spans:
-                font_name = span.get("font", "").lower()
-                is_bold = bool(span.get("flags", 0) & 16) or "bold" in font_name
-                target_font = "hebo" if is_bold else "helv"
+            for span in spans:
+                orig_rect = span["bbox"]
+                shift_y = new_y - item["orig_y"]
+                new_rect = orig_rect + (0, shift_y, 0, shift_y)
                 
-                orig_x, orig_y = span["origin"]
-                pt = fitz.Point(orig_x + shift_x, new_y + (orig_y - item["orig_y"]))
-                
-                color = fitz.sRGB_to_pdf(span.get("color", 0))
-                page1.insert_text(pt, text, fontsize=span["size"], fontname=target_font, color=color)
-                
-                old_w = fitz.get_text_length(span["text"], fontname=target_font, fontsize=span["size"])
-                new_w = fitz.get_text_length(text, fontname=target_font, fontsize=span["size"])
-                shift_x += (new_w - old_w)
+                # Disegna il testo ritagliandolo dal PDF originale, mantenendo font e vettori originali perfetti!
+                page1.show_pdf_page(new_rect, doc_orig, span["page_num"], clip=orig_rect)
                 
         while len(doc) > 1:
             doc.delete_page(1)
