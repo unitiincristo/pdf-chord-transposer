@@ -343,6 +343,7 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                             continue
                             
                         shift_x_accum = 0
+                        last_end_x = -9999
                         for span in line.get("spans", []):
                             testo_span = span.get("text", "")
                             color = span.get("color", 0)
@@ -363,15 +364,29 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                                         pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
                                         def replace_chord(m):
                                             return get_transposed_chord(m.group(1), semitoni, scala_riferimento)
+                                        
+                                        temp_text = new_span_text
                                         new_span_text = re.sub(pattern_accordo, replace_chord, new_span_text, flags=re.IGNORECASE)
+                                        
+                                        # Se abbiamo fatto una trasposizione e ci sono spazi, li raddoppiamo 
+                                        # per garantire che gli accordi non sembrino incollati (es. SolmFa)
+                                        if new_span_text != temp_text:
+                                            new_span_text = new_span_text.replace(" ", "  ")
+                            
+                            font_size = span["size"]
+                            target_x = origin.x + shift_x_accum
+                            min_x = last_end_x + font_size * 0.4 # Distanza minima per staccare accordi troppo vicini/sovrapposti
+                            
+                            if target_x < min_x and testo_span.strip() != "":
+                                target_x = min_x
+                                shift_x_accum = target_x - origin.x
                             
                             if new_span_text != testo_span or shift_x_accum != 0:
                                 if testo_span.strip() != "":
                                     mid_y = (rect.y0 + rect.y1) / 2
                                     thin_rect = fitz.Rect(rect.x0, mid_y - 1, rect.x1, mid_y + 1)
                                     page.add_redact_annot(thin_rect, cross_out=False)
-                                new_origin = fitz.Point(origin.x + shift_x_accum, origin.y)
-                                font_size = span["size"]
+                                new_origin = fitz.Point(target_x, origin.y)
                                 color_rgb = fitz.sRGB_to_pdf(color)
                                 if new_span_text.strip() != "":
                                     insertions.append((new_origin, new_span_text, font_size, color_rgb, target_font))
@@ -379,6 +394,9 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                                 old_width = fitz.get_text_length(testo_span, fontname=target_font, fontsize=font_size)
                                 new_width = fitz.get_text_length(new_span_text, fontname=target_font, fontsize=font_size)
                                 shift_x_accum += (new_width - old_width)
+                                
+                            if new_span_text.strip() != "":
+                                last_end_x = target_x + fitz.get_text_length(new_span_text, fontname=target_font, fontsize=font_size)
                                     
             page.apply_redactions()
             
