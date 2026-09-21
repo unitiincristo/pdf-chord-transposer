@@ -387,7 +387,7 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                             
                             font_size = span["size"]
                             target_x = origin.x + shift_x_accum
-                            min_x = last_end_x + font_size * 0.4 # Distanza minima per staccare accordi troppo vicini/sovrapposti
+                            min_x = last_end_x + font_size * 0.8 # Distanza minima per staccare accordi troppo vicini/sovrapposti
                             
                             if target_x < min_x and testo_span.strip() != "":
                                 target_x = min_x
