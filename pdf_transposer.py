@@ -273,6 +273,12 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
             text_dict = page.get_text("dict")
             insertions = []
             
+            # Variabili per mantenere la spaziatura corretta anche se gli accordi sono divisi 
+            # in blocchi/linee diverse da PyMuPDF, purché siano sulla stessa riga visiva.
+            shift_x_accum = 0
+            last_end_x = -9999
+            last_y = -9999
+            
             for block in text_dict.get("blocks", []):
                 if block.get("type") == 0:
                     for line in block.get("lines", []):
@@ -292,7 +298,7 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                             if not is_key_upper: nuova_chiave_str = tonalita_obiettivo_norm.capitalize() + minor_suffix
                             
                             spans = line.get("spans", [])
-                            shift_x_accum = 0
+                            local_shift = 0
                             for span in spans:
                                 testo_span = span.get("text", "")
                                 rect = fitz.Rect(span["bbox"])
@@ -307,18 +313,18 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                                 font_size = span["size"]
                                 color_rgb = fitz.sRGB_to_pdf(span.get("color", 0))
                                 
-                                if new_span_text != testo_span or shift_x_accum != 0:
+                                if new_span_text != testo_span or local_shift != 0:
                                     if testo_span.strip() != "":
                                         mid_y = (rect.y0 + rect.y1) / 2
                                         thin_rect = fitz.Rect(rect.x0, mid_y - 1, rect.x1, mid_y + 1)
                                         page.add_redact_annot(thin_rect, cross_out=False)
-                                    new_origin = fitz.Point(origin.x + shift_x_accum, origin.y)
+                                    new_origin = fitz.Point(origin.x + local_shift, origin.y)
                                     if new_span_text.strip() != "":
                                         insertions.append((new_origin, new_span_text, font_size, color_rgb, target_font))
                                     
                                     old_width = fitz.get_text_length(testo_span, fontname=target_font, fontsize=font_size)
                                     new_width = fitz.get_text_length(new_span_text, fontname=target_font, fontsize=font_size)
-                                    shift_x_accum += (new_width - old_width)
+                                    local_shift += (new_width - old_width)
                                     
                             extra_text = ""
                             if capo_tasto: extra_text += f" | Capo: {capo_tasto}"
@@ -327,7 +333,7 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                             if extra_text and spans:
                                 last_span = spans[-1]
                                 last_rect = fitz.Rect(last_span["bbox"])
-                                x_end = last_rect.x1 + shift_x_accum + 3
+                                x_end = last_rect.x1 + local_shift + 3
                                 y_origin = last_span["origin"][1]
                                 
                                 font_name = last_span.get("font", "").lower()
@@ -342,12 +348,11 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                         if not has_key and is_lyric:
                             continue
                             
-                        shift_x_accum = 0
-                        last_end_x = -9999
                         for span in line.get("spans", []):
                             testo_span = span.get("text", "")
                             color = span.get("color", 0)
                             flags = span.get("flags", 0)
+                            font_size = span["size"]
                             font_name = span.get("font", "").lower()
                             is_bold = bool(flags & 16) or "bold" in font_name
                             target_font = "hebo" if is_bold else "helv"
@@ -355,6 +360,13 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                             origin = fitz.Point(span["origin"])
                             rect = fitz.Rect(span["bbox"])
                             new_span_text = testo_span
+                            
+                            # Se siamo su una nuova riga (distanza Y > metà della dimensione font), resettiamo l'accumulatore
+                            if abs(origin.y - last_y) > font_size * 0.5:
+                                shift_x_accum = 0
+                                last_end_x = -9999
+                            last_y = origin.y
+                            
                             
                             is_colored = color != 0 and color != 0xFFFFFF
                             if not has_key:
