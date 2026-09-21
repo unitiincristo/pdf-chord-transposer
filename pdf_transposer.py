@@ -309,7 +309,9 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                                 
                                 if new_span_text != testo_span or shift_x_accum != 0:
                                     if testo_span.strip() != "":
-                                        page.add_redact_annot(rect, fill=(1,1,1))
+                                        mid_y = (rect.y0 + rect.y1) / 2
+                                        thin_rect = fitz.Rect(rect.x0, mid_y - 1, rect.x1, mid_y + 1)
+                                        page.add_redact_annot(thin_rect, cross_out=False)
                                     new_origin = fitz.Point(origin.x + shift_x_accum, origin.y)
                                     if new_span_text.strip() != "":
                                         insertions.append((new_origin, new_span_text, font_size, color_rgb, target_font))
@@ -365,7 +367,9 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                             
                             if new_span_text != testo_span or shift_x_accum != 0:
                                 if testo_span.strip() != "":
-                                    page.add_redact_annot(rect, fill=(1,1,1))
+                                    mid_y = (rect.y0 + rect.y1) / 2
+                                    thin_rect = fitz.Rect(rect.x0, mid_y - 1, rect.x1, mid_y + 1)
+                                    page.add_redact_annot(thin_rect, cross_out=False)
                                 new_origin = fitz.Point(origin.x + shift_x_accum, origin.y)
                                 font_size = span["size"]
                                 color_rgb = fitz.sRGB_to_pdf(color)
