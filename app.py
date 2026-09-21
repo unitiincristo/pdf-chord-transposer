@@ -122,4 +122,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.4.6 - Motore Solo Testo con iniezione dinamica fontbuffer e fallback sicuro")
+st.caption("Versione 1.5.0 - Motore di gestione intelligente della spaziatura orizzontale (Zero Sovrapposizioni)")
