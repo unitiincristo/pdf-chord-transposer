@@ -122,4 +122,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.5.1 - Fix Gap di Sicurezza Aumentato")
+st.caption("Versione 1.6.1 - Fix Split Accordi (Font Size) e Supporto add4")

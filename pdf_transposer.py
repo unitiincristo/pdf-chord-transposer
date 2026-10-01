@@ -53,7 +53,7 @@ def is_chord(text):
     # Pattern esatto per un singolo accordo o accordo con basso (es. Do, Rem7, Do/Mi)
     clean_text = text.strip()
     pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
-    pattern_accordo = rf"^{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?$"
+    pattern_accordo = rf"^{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|add4|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|add4|5|6|maj|sus|aug)*)?$"
     return bool(re.match(pattern_accordo, clean_text, flags=re.IGNORECASE))
 
 def is_lyric_span(text):
@@ -72,7 +72,7 @@ def is_lyric_span(text):
             continue
             
         pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
-        pattern_accordo = rf"^{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?$"
+        pattern_accordo = rf"^{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|add4|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|add4|5|6|maj|sus|aug)*)?$"
         if re.match(pattern_accordo, w_clean, flags=re.IGNORECASE):
             continue
             
@@ -124,9 +124,30 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
         
         for page_num in range(len(doc)):
             page = doc[page_num]
+            
+            all_lines = []
             for block in page.get_text("dict").get("blocks", []):
-                if block.get("type") != 0: continue
-                for line in block.get("lines", []):
+                if block.get("type") == 0:
+                    all_lines.extend(block.get("lines", []))
+            all_lines.sort(key=lambda l: l["bbox"][1])
+            
+            for line in all_lines:
+                    merged_spans = []
+                    for span in line.get("spans", []):
+                        if not merged_spans:
+                            merged_spans.append(dict(span))
+                        else:
+                            prev = merged_spans[-1]
+                            if (not prev.get("text", "").endswith(" ") and 
+                                not span.get("text", "").startswith(" ") and 
+                                abs(span["bbox"][0] - prev["bbox"][2]) < 2.5):
+                                prev["text"] += span.get("text", "")
+                                prev["bbox"] = (prev["bbox"][0], min(prev["bbox"][1], span["bbox"][1]), 
+                                                span["bbox"][2], max(prev["bbox"][3], span["bbox"][3]))
+                            else:
+                                merged_spans.append(dict(span))
+                    line["spans"] = merged_spans
+                    
                     full_line_text = "".join([span.get("text", "") for span in line.get("spans", [])])
                     if full_line_text.strip() == "": continue
                     
@@ -273,15 +294,35 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
             text_dict = page.get_text("dict")
             insertions = []
             
-            # Variabili per mantenere la spaziatura corretta anche se gli accordi sono divisi 
-            # in blocchi/linee diverse da PyMuPDF, purché siano sulla stessa riga visiva.
-            shift_x_accum = 0
-            last_end_x = -9999
-            last_y = -9999
+            # Variabili per mantenere la spaziatura corretta
+            shift_x_accum_by_y = {}
+            last_end_x_by_y = {}
+            
+            def get_y_key(current_y, font_size, existing_keys):
+                for ky in existing_keys:
+                    if abs(ky - current_y) < font_size * 0.5:
+                        return ky
+                return current_y
             
             for block in text_dict.get("blocks", []):
                 if block.get("type") == 0:
                     for line in block.get("lines", []):
+                        merged_spans = []
+                        for span in line.get("spans", []):
+                            if not merged_spans:
+                                merged_spans.append(dict(span))
+                            else:
+                                prev = merged_spans[-1]
+                                if (not prev.get("text", "").endswith(" ") and 
+                                    not span.get("text", "").startswith(" ") and 
+                                    abs(span["bbox"][0] - prev["bbox"][2]) < 2.5):
+                                    prev["text"] += span.get("text", "")
+                                    prev["bbox"] = (prev["bbox"][0], min(prev["bbox"][1], span["bbox"][1]), 
+                                                    span["bbox"][2], max(prev["bbox"][3], span["bbox"][3]))
+                                else:
+                                    merged_spans.append(dict(span))
+                        line["spans"] = merged_spans
+                        
                         full_line_text = "".join([span.get("text", "") for span in line.get("spans", [])])
                         has_key = bool(re.search(r"(Key|Tonalità|Tonalita)[:\s]+([A-Za-z#b\-]+)", full_line_text, flags=re.IGNORECASE))
                         
@@ -361,19 +402,20 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                             rect = fitz.Rect(span["bbox"])
                             new_span_text = testo_span
                             
-                            # Se siamo su una nuova riga (distanza Y > metà della dimensione font), resettiamo l'accumulatore
-                            if abs(origin.y - last_y) > font_size * 0.5:
-                                shift_x_accum = 0
-                                last_end_x = -9999
-                            last_y = origin.y
+                            y_key = get_y_key(origin.y, font_size, shift_x_accum_by_y.keys())
+                            if y_key not in shift_x_accum_by_y:
+                                shift_x_accum_by_y[y_key] = 0
+                                last_end_x_by_y[y_key] = -9999
                             
+                            shift_x_accum = shift_x_accum_by_y[y_key]
+                            last_end_x = last_end_x_by_y[y_key]
                             
                             is_colored = color != 0 and color != 0xFFFFFF
                             if not has_key:
                                 if is_colored or (color == 0 and is_bold):
                                     if not ("http://" in testo_span or "https://" in testo_span or "www." in testo_span):
                                         pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
-                                        pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
+                                        pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|add4|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|add4|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
                                         def replace_chord(m):
                                             return get_transposed_chord(m.group(1), semitoni, scala_riferimento)
                                         
@@ -387,7 +429,7 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                             
                             font_size = span["size"]
                             target_x = origin.x + shift_x_accum
-                            min_x = last_end_x + font_size * 0.8 # Distanza minima per staccare accordi troppo vicini/sovrapposti
+                            min_x = last_end_x + font_size * 1.5 # Distanza minima per staccare accordi troppo vicini/sovrapposti
                             
                             if target_x < min_x and testo_span.strip() != "":
                                 target_x = min_x
@@ -409,6 +451,10 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                                 
                             if new_span_text.strip() != "":
                                 last_end_x = target_x + fitz.get_text_length(new_span_text, fontname=target_font, fontsize=font_size)
+                                
+                            # Salva i valori aggiornati nel dizionario per questa riga visiva
+                            shift_x_accum_by_y[y_key] = shift_x_accum
+                            last_end_x_by_y[y_key] = last_end_x
                                     
             page.apply_redactions()
             
