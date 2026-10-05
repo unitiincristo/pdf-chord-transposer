@@ -3,7 +3,7 @@ from pdf_transposer import transponi_pdf
 
 # Configurazione base della pagina
 st.set_page_config(
-    page_title="PDF Chord Transposer",
+    page_title="PDF Chord Transposer v1.6.3",
     page_icon="🎵",
     layout="centered"
 )
@@ -37,7 +37,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🎵 Traspositore Accordi PDF")
+st.title("🎵 Traspositore Accordi PDF v1.6.3")
 st.markdown("Carica il tuo PDF, scegli la nuova tonalità e scarica il file con gli accordi modificati.")
 
 # Caricamento del file PDF
@@ -122,4 +122,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.6.2 - Fix Allineamento Orizzontale Accordi (Drift a destra)")
+st.caption("Versione 1.6.3 - Fix Sovrapposizione Accordi/Testo (Coro)")
