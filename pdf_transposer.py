@@ -57,8 +57,13 @@ def is_chord(text):
     return bool(re.match(pattern_accordo, clean_text, flags=re.IGNORECASE))
 
 def is_lyric_span(text):
-    words = text.split()
-    musical_keywords = {"intro", "vamp", "coro", "verso", "bridge", "instrumental", "ending", "pre-coro", "bpm", "tempo", "key", "tonalita", "tonalità", "volta", "volte", "x", "chorus", "interlude"}
+    # Rimuovi testo tra parentesi (es. "(2^ volta per Coro)", "(intro)")
+    # cosí non vengono considerate come parole di testo
+    text_no_parens = re.sub(r'\(.*?\)', '', text)
+    text_no_parens = re.sub(r'\[.*?\]', '', text_no_parens)
+    
+    words = text_no_parens.split()
+    musical_keywords = {"intro", "vamp", "coro", "verso", "bridge", "instrumental", "ending", "pre-coro", "bpm", "tempo", "key", "tonalita", "tonalità", "volta", "volte", "x", "chorus", "interlude", "per", "al", "il", "la", "le", "un", "una", "solo", "tutti", "strumentale", "chitarra", "piano"}
     
     for w in words:
         w_clean = re.sub(r'^[\(\[\|\.,;:\-\/]+|[\)\]\|\.,;:\-\/]+$', '', w).lower()
