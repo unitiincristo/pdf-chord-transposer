@@ -37,7 +37,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🎵 Traspositore Accordi PDF")
+st.title("?? Traspositore Accordi PDF v1.6.3")
 st.markdown("Carica il tuo PDF, scegli la nuova tonalità e scarica il file con gli accordi modificati.")
 
 # Caricamento del file PDF

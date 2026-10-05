@@ -356,9 +356,7 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                                 
                                 if new_span_text != testo_span or local_shift != 0:
                                     if testo_span.strip() != "":
-                                        mid_y = (rect.y0 + rect.y1) / 2
-                                        thin_rect = fitz.Rect(rect.x0, mid_y - 1, rect.x1, mid_y + 1)
-                                        page.add_redact_annot(thin_rect, cross_out=False)
+                                        page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1))
                                     new_origin = fitz.Point(origin.x + local_shift, origin.y)
                                     if new_span_text.strip() != "":
                                         insertions.append((new_origin, new_span_text, font_size, color_rgb, target_font))
@@ -433,9 +431,7 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                             
                             if new_span_text != testo_span or shift_x_accum != 0:
                                 if testo_span.strip() != "":
-                                    mid_y = (rect.y0 + rect.y1) / 2
-                                    thin_rect = fitz.Rect(rect.x0, mid_y - 1, rect.x1, mid_y + 1)
-                                    page.add_redact_annot(thin_rect, cross_out=False)
+                                    page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1))
                                 new_origin = fitz.Point(target_x, origin.y)
                                 color_rgb = fitz.sRGB_to_pdf(color)
                                 if new_span_text.strip() != "":
@@ -452,8 +448,6 @@ def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=No
                             shift_x_accum_by_y[y_key] = shift_x_accum
                             last_end_x_by_y[y_key] = last_end_x
                                     
-            page.apply_redactions()
-            
             for point, text, fsize, color, font in insertions:
                 page.insert_text(point, text, fontsize=fsize, fontname=font, color=color)
 
