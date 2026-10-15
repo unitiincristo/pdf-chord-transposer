@@ -333,7 +333,7 @@ def compact_solo_testo(doc):
                     insert_span_text(page, pt, s["text"], s["size"], s["font"], s.get("flags", 0), s.get("color", 0))
                 col_y[c] += max_fsize * 1.3
 
-def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=None, solo_testo=False, solo_testo_layout=False):
+def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=None, solo_testo=False, solo_testo_layout=False, **kwargs):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     
     # 1. Trova la tonalità originale

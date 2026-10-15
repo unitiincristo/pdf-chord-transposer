@@ -1,5 +1,8 @@
 import streamlit as st
 import re
+import importlib
+import pdf_transposer
+importlib.reload(pdf_transposer)
 from pdf_transposer import transponi_pdf
 
 # Configurazione base della pagina
