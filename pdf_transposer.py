@@ -115,9 +115,54 @@ def remove_chords_keep_layout(doc):
                                 page.draw_rect(s_rect, color=(1, 1, 1), fill=(1, 1, 1))
                         continue
 
-                    # 2. Se ha la tonalità (es. BPM: 74 - Tonalità Sib), non cancellare
+                    # 2. Controllo intestazione in alto con 'ton. XXX' (es. "DEGNO DI OGNI LODE SEI (Worthy Of It All) ton. Sib maschile")
+                    pattern_header_ton = r'\s*(?:[-–|/]\s*)?(?:\(?\s*(?:ton\.?|tonalit[àa]|tonalita|key)[:\s]*[A-Za-z#b\-]+(?:\s*\(?(?:maschile|femminile)\)?)?\s*\)?)\s*$'
+                    if re.search(pattern_header_ton, full_line_text, flags=re.IGNORECASE):
+                        cleaned_title = re.sub(pattern_header_ton, '', full_line_text, flags=re.IGNORECASE).strip()
+                        rect = fitz.Rect(line["bbox"])
+                        rect.y0 -= 1
+                        rect.y1 += 1
+                        rect.x1 += 2
+                        page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1))
+                        
+                        first_span = spans[0]
+                        font_name = first_span.get("font", "").lower()
+                        is_bold = bool(first_span.get("flags", 0) & 16) or "bold" in font_name
+                        target_font = "hebo" if is_bold else "helv"
+                        fsize = first_span["size"]
+                        color = fitz.sRGB_to_pdf(first_span.get("color", 0))
+                        
+                        origin_x = first_span["origin"][0]
+                        if line["bbox"][2] > page.rect.width * 0.7:
+                            old_w = fitz.get_text_length(full_line_text, fontname=target_font, fontsize=fsize)
+                            new_w = fitz.get_text_length(cleaned_title, fontname=target_font, fontsize=fsize)
+                            origin_x += (old_w - new_w)
+                            
+                        origin = fitz.Point(origin_x, first_span["origin"][1])
+                        insertions.append((origin, cleaned_title, fsize, color, target_font))
+                        continue
+
+                    # 3. Controllo riga BPM / Tonalità (es. "BPM: 74 – 4/4 Tonalità Sib maschile")
+                    pattern_bpm_ton = r'\s*(?:[-–|/]\s*)?(?:Tonalit[àa]|Tonalita|Key)[:\s]+[A-Za-z#b\-]+(?:\s*\(?(?:maschile|femminile)\)?)?\s*(?:[-–|/]\s*)?'
                     has_key = bool(re.search(r"(Key|Tonalit[àa]|Tonalita)[:\s]+([A-Za-z#b\-]+)", full_line_text, flags=re.IGNORECASE))
                     if has_key:
+                        cleaned_bpm = re.sub(pattern_bpm_ton, ' ', full_line_text, flags=re.IGNORECASE)
+                        cleaned_bpm = re.sub(r'\s+', ' ', cleaned_bpm).strip(' -–|/\t')
+                        rect = fitz.Rect(line["bbox"])
+                        rect.y0 -= 1
+                        rect.y1 += 1
+                        rect.x1 += 2
+                        page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1))
+                        
+                        if cleaned_bpm:
+                            first_span = spans[0]
+                            font_name = first_span.get("font", "").lower()
+                            is_bold = bool(first_span.get("flags", 0) & 16) or "bold" in font_name
+                            target_font = "hebo" if is_bold else "helv"
+                            fsize = first_span["size"]
+                            color = fitz.sRGB_to_pdf(first_span.get("color", 0))
+                            origin = fitz.Point(first_span["origin"])
+                            insertions.append((origin, cleaned_bpm, fsize, color, target_font))
                         continue
                         
                     is_lyric = is_lyric_span(full_line_text)
@@ -300,9 +345,38 @@ def compact_solo_testo(doc):
             if not inserted:
                 p.insert_text(pt, clean_text, fontsize=size, fontname=fallback_font, color=color)
         
+        pattern_header_ton = r'\s*(?:[-–|/]\s*)?(?:\(?\s*(?:ton\.?|tonalit[àa]|tonalita|key)[:\s]*[A-Za-z#b\-]+(?:\s*\(?(?:maschile|femminile)\)?)?\s*\)?)\s*$'
+        pattern_bpm_ton = r'\s*(?:[-–|/]\s*)?(?:Tonalit[àa]|Tonalita|Key)[:\s]+[A-Za-z#b\-]+(?:\s*\(?(?:maschile|femminile)\)?)?\s*(?:[-–|/]\s*)?'
+        
         for hline in header_lines + footer_lines:
+            full_line_text = "".join(s.get("text", "") for s in hline["spans"]).strip()
+            is_hdr_ton = bool(re.search(pattern_header_ton, full_line_text, flags=re.IGNORECASE))
+            is_bpm_ton = bool(re.search(pattern_bpm_ton, full_line_text, flags=re.IGNORECASE))
+            
+            if is_hdr_ton:
+                cleaned_txt = re.sub(pattern_header_ton, '', full_line_text, flags=re.IGNORECASE).strip()
+                first_s = hline["spans"][0]
+                origin = fitz.Point(first_s["origin"])
+                if hline["bbox"][2] > page.rect.width * 0.7:
+                    old_w = fitz.get_text_length(full_line_text, fontname="helv", fontsize=first_s["size"])
+                    new_w = fitz.get_text_length(cleaned_txt, fontname="helv", fontsize=first_s["size"])
+                    origin = fitz.Point(origin.x + (old_w - new_w), origin.y)
+                insert_span_text(page, origin, cleaned_txt, first_s["size"], first_s["font"], first_s.get("flags", 0), first_s.get("color", 0))
+                continue
+                
+            if is_bpm_ton:
+                cleaned_bpm = re.sub(pattern_bpm_ton, ' ', full_line_text, flags=re.IGNORECASE)
+                cleaned_bpm = re.sub(r'\s+', ' ', cleaned_bpm).strip(' -–|/\t')
+                if cleaned_bpm:
+                    first_s = hline["spans"][0]
+                    origin = fitz.Point(first_s["origin"])
+                    insert_span_text(page, origin, cleaned_bpm, first_s["size"], first_s["font"], first_s.get("flags", 0), first_s.get("color", 0))
+                continue
+
             for s in hline["spans"]:
-                insert_span_text(page, fitz.Point(s["origin"]), s["text"], s["size"], s["font"], s.get("flags", 0), s.get("color", 0))
+                txt = s["text"]
+                origin = fitz.Point(s["origin"])
+                insert_span_text(page, origin, txt, s["size"], s["font"], s.get("flags", 0), s.get("color", 0))
                     
         start_y = 115 if pno == 0 else 50
         

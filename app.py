@@ -7,7 +7,7 @@ from pdf_transposer import transponi_pdf
 
 # Configurazione base della pagina
 st.set_page_config(
-    page_title="PDF Chord Transposer v1.7.0",
+    page_title="PDF Chord Transposer v1.7.1",
     page_icon="🎵",
     layout="centered"
 )
@@ -41,7 +41,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🎵 Traspositore Accordi PDF v1.7.0")
+st.title("🎵 Traspositore Accordi PDF v1.7.1")
 st.markdown("Carica il tuo PDF, scegli la nuova tonalità oppure esporta il testo con o senza spaziature originali.")
 
 # Caricamento del file PDF
@@ -131,10 +131,12 @@ if uploaded_file is not None:
                 # Generazione intelligente del nuovo nome file
                 original_name = uploaded_file.name
                 
-                if elimina_accordi_layout:
-                    new_file_name = f"{original_name.replace('.pdf', '')}_SenzaAccordi.pdf"
-                elif solo_testo:
-                    new_file_name = f"{original_name.replace('.pdf', '')}_SoloTesto.pdf"
+                if elimina_accordi_layout or solo_testo:
+                    pattern_ton_filename = r'\s*(?:[-–|/]\s*)?(?:\(?\s*(?:ton\.?|tonalit[àa]|tonalita|key)[:\s]*[A-Za-z#b\-]+(?:\s*\(?(?:maschile|femminile)\)?)?\s*\)?)\s*'
+                    base_name = original_name[:-4] if original_name.lower().endswith('.pdf') else original_name
+                    clean_name = re.sub(pattern_ton_filename, '', base_name, flags=re.IGNORECASE).strip(' -–|/')
+                    suffix = "_SenzaAccordi.pdf" if elimina_accordi_layout else "_SoloTesto.pdf"
+                    new_file_name = f"{clean_name}{suffix}"
                 else:
                     # Usiamo lookarounds (?<![A-Za-z]) e (?![A-Za-z]) per evitare i limiti di \b con caratteri speciali come # o -
                     pattern = rf"(?<![A-Za-z]){re.escape(tonalita_originale)}(?![A-Za-z])"
@@ -159,4 +161,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.7.0 - Rimozione Accordi (Layout Originale) e Fix Solo Testo Compattato")
+st.caption("Versione 1.7.1 - Rimozione indicazione tonalità da titolo e BPM per spartito senza accordi")
