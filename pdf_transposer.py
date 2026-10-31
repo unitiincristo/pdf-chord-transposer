@@ -104,14 +104,12 @@ def remove_chords_keep_layout(doc):
                         continue
                     
                     # 1. Se la riga ha accordi colorati (es. template vecchi con accordi rossi)
-                    has_colored_spans = any(s.get("color", 0) != 0 and s.get("color", 0) != 0xFFFFFF for s in spans)
+                    has_colored_spans = any(s.get("color", 0) != 0 and s.get("color", 0) != 0xFFFFFF and s.get("text", "").strip() != "" for s in spans)
                     if has_colored_spans:
                         for s in spans:
                             col = s.get("color", 0)
-                            if col != 0 and col != 0xFFFFFF:
+                            if col != 0 and col != 0xFFFFFF and s.get("text", "").strip() != "":
                                 s_rect = fitz.Rect(s["bbox"])
-                                s_rect.y0 -= 1
-                                s_rect.y1 += 1
                                 page.draw_rect(s_rect, color=(1, 1, 1), fill=(1, 1, 1))
                         continue
 
@@ -210,7 +208,11 @@ def remove_chords_keep_layout(doc):
             page.insert_text(origin, text, fontsize=fsize, fontname=font, color=color)
 
 def compact_solo_testo(doc):
-    section_keywords = ["VERSE", "CHORUS", "BRIDGE", "INTRO", "INTERLUDE", "CORO", "VERSO", "FINAL", "ENDING", "PRE CHORUS", "PRE-CHORUS", "VAMP", "INSTRUMENTAL", "TAG", "STROFA"]
+    section_keywords = [
+        "VERSE", "CHORUS", "BRIDGE", "INTRO", "INTERLUDE", "CORO", "VERSO", 
+        "FINAL", "ENDING", "END", "OUTRO", "PRE CHORUS", "PRE-CHORUS", "VAMP", 
+        "INSTRUMENTAL", "TAG", "STROFA"
+    ]
     pattern_nota = r"(?:DO#|REb|RE#|MIb|FA#|SOLb|SOL#|LAb|LA#|SIb|DO|RE|MI|FA|SOL|LA|SI)"
     pattern_accordo = rf"(?<![A-Za-z])({pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|add4|5|6|maj|sus|aug)*(?:\/{pattern_nota}(?:\-|m7|m|4|7|maj7|sus4|dim|9|2|sus2|add9|add4|5|6|maj|sus|aug)*)?)(?![A-Za-z])"
     
@@ -228,112 +230,82 @@ def compact_solo_testo(doc):
 
     for pno in range(len(doc)):
         page = doc[pno]
-        page_width = page.rect.width
-        page_height = page.rect.height
+        pw = page.rect.width
+        ph = page.rect.height
         
         all_lines = []
-        for block in page.get_text("dict").get("blocks", []):
-            if block.get("type") == 0:
-                all_lines.extend(block.get("lines", []))
-        all_lines.sort(key=lambda l: l["bbox"][1])
+        for b in page.get_text("dict").get("blocks", []):
+            if b.get("type") == 0:
+                for l in b.get("lines", []):
+                    txt = "".join(s.get("text", "") for s in l.get("spans", [])).strip()
+                    if txt:
+                        all_lines.append(l)
+                        
+        all_lines.sort(key=lambda l: (l["bbox"][1], l["bbox"][0]))
+        
+        # Calcolo dinamico dell'altezza intestazione
+        bpm_y1 = None
+        if pno == 0:
+            for l in all_lines:
+                txt = "".join(s.get("text", "") for s in l.get("spans", [])).strip()
+                if re.search(r'(?:BPM|Tempo|Tonalit[àa]|Tonalita|Key)[:\s]+', txt, flags=re.IGNORECASE):
+                    if bpm_y1 is None or l["bbox"][3] > bpm_y1:
+                        bpm_y1 = l["bbox"][3]
+            header_threshold = (bpm_y1 + 5.0) if bpm_y1 is not None else 95.0
+        else:
+            header_threshold = 35.0
         
         header_lines = []
         footer_lines = []
         body_lines = []
         
-        for line in all_lines:
-            merged_spans = []
-            for span in line.get("spans", []):
-                if not merged_spans:
-                    merged_spans.append(dict(span))
-                else:
-                    prev = merged_spans[-1]
-                    if (not prev.get("text", "").endswith(" ") and 
-                        not span.get("text", "").startswith(" ") and 
-                        abs(span["bbox"][0] - prev["bbox"][2]) < 2.5):
-                        prev["text"] += span.get("text", "")
-                        prev["bbox"] = (prev["bbox"][0], min(prev["bbox"][1], span["bbox"][1]), 
-                                        span["bbox"][2], max(prev["bbox"][3], span["bbox"][3]))
-                    else:
-                        merged_spans.append(dict(span))
-            line["spans"] = merged_spans
+        for l in all_lines:
+            y0 = l["bbox"][1]
+            txt = "".join(s.get("text", "") for s in l.get("spans", [])).strip()
+            upper = txt.upper()
+            has_sec = any(upper.startswith(kw) for kw in section_keywords)
             
-            full_line_text = "".join(s.get("text", "") for s in merged_spans).strip()
-            if not full_line_text:
-                continue
-                
-            y0 = line["bbox"][1]
+            # Controllo se è piè di pagina (vicino al fondo e con font piccolo <= 8.5 o parole chiave footer)
+            spans = l.get("spans", [])
+            is_ftr = False
+            if y0 > ph - 75:
+                fsize = spans[0].get("size", 10) if spans else 10
+                if fsize <= 8.5 or re.search(r'^(?:p\s*a\s*g|page|\d+$|©|tel|fax|via\s)', txt, flags=re.IGNORECASE):
+                    is_ftr = True
             
-            is_top_header = (pno == 0 and y0 < 95) or (pno > 0 and y0 < 30)
-            is_bottom_footer = (y0 > page_height - 90)
-            
-            if is_top_header:
-                header_lines.append(line)
-            elif is_bottom_footer:
-                footer_lines.append(line)
+            # Se ha una sezione (es. INTRO, VERSE) non è mai un header
+            if y0 < header_threshold and not has_sec:
+                header_lines.append(l)
+            elif is_ftr:
+                footer_lines.append(l)
             else:
-                body_lines.append(line)
+                body_lines.append(l)
                 
-        kept_body = []
-        for line in body_lines:
-            spans = line["spans"]
-            if any(s.get("color", 0) != 0 and s.get("color", 0) != 0xFFFFFF for s in spans):
-                continue
-                
-            full_line_text = "".join(s.get("text", "") for s in spans).strip()
-            upper_line = full_line_text.upper()
-            
-            is_lyric = is_lyric_span(full_line_text)
-            has_sec_prefix = any(upper_line.startswith(kw) for kw in section_keywords)
-            
-            words_no_parens = re.sub(r'\(.*?\)|\[.*?\]', '', full_line_text)
-            all_chords = re.findall(pattern_accordo, words_no_parens, flags=re.IGNORECASE)
-                    
-            if not is_lyric and not has_sec_prefix:
-                continue
-                
-            prefix_match = re.match(r'^((?:INTRO|ENDING|INSTRUMENTAL|CORO|VERSO|BRIDGE|TAG|STROFA)\s*:?)(.*)$', full_line_text, flags=re.IGNORECASE)
-            if prefix_match and all_chords:
-                label = prefix_match.group(1).strip()
-                new_spans = [{
-                    "text": label,
-                    "size": line["spans"][0]["size"],
-                    "origin": line["spans"][0]["origin"],
-                    "color": line["spans"][0].get("color", 0),
-                    "font": line["spans"][0].get("font", ""),
-                    "flags": line["spans"][0].get("flags", 0),
-                    "bbox": line["bbox"]
-                }]
-                kept_body.append({
-                    "spans": new_spans,
-                    "is_section": True,
-                    "x0": line["bbox"][0],
-                    "orig_y": y0
-                })
-                continue
-                
-            is_section = has_sec_prefix or not is_lyric
-            kept_body.append({
-                "spans": line["spans"],
-                "is_section": is_section,
-                "x0": line["bbox"][0],
-                "orig_y": y0
-            })
-            
-        right_lines = [item for item in kept_body if item["x0"] > page_width * 0.45]
-        left_lines = [item for item in kept_body if item["x0"] <= page_width * 0.45]
-        has_two_cols = len(right_lines) >= 3 and len(left_lines) >= 3
+        # Bulletproof 2-column detection: conta righi di testo/sezione che iniziano a dx e a sx
+        left_lyrics = 0
+        right_lyrics = 0
+        for l in body_lines:
+            txt = "".join(s.get("text", "") for s in l.get("spans", [])).strip()
+            is_sec = any(txt.upper().startswith(kw) for kw in section_keywords)
+            is_lyr = is_lyric_span(txt)
+            if is_sec or is_lyr:
+                if l["bbox"][0] >= pw * 0.45:
+                    right_lyrics += 1
+                else:
+                    left_lyrics += 1
+        has_two_cols = (left_lyrics >= 3 and right_lyrics >= 3)
         
+        # Redact page text
         page.add_redact_annot(page.rect)
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
         
         def insert_span_text(p, pt, text, size, font_name, flags, color_int):
-            if "+" in font_name: font_name = font_name.split("+")[1]
+            if "+" in font_name:
+                font_name = font_name.split("+")[1]
             is_bold = bool(flags & 16) or "bold" in font_name.lower()
             fallback_font = "hebo" if is_bold else "helv"
             clean_text = text.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"').replace("–", "-")
             color = fitz.sRGB_to_pdf(color_int)
-            
             inserted = False
             if font_name in font_buffers:
                 fname, fbuf = font_buffers[font_name]
@@ -344,68 +316,147 @@ def compact_solo_testo(doc):
                     pass
             if not inserted:
                 p.insert_text(pt, clean_text, fontsize=size, fontname=fallback_font, color=color)
-        
+
+        # 1. Intestazioni / Metadati
         pattern_header_ton = r'\s*(?:[-–|/]\s*)?(?:\(?\s*(?:ton\.?|tonalit[àa]|tonalita|key)[:\s]*[A-Za-z#b\-]+(?:\s*\(?(?:maschile|femminile)\)?)?\s*\)?)\s*$'
         pattern_bpm_ton = r'\s*(?:[-–|/]\s*)?(?:Tonalit[àa]|Tonalita|Key)[:\s]+[A-Za-z#b\-]+(?:\s*\(?(?:maschile|femminile)\)?)?\s*(?:[-–|/]\s*)?'
         
-        for hline in header_lines + footer_lines:
-            full_line_text = "".join(s.get("text", "") for s in hline["spans"]).strip()
-            is_hdr_ton = bool(re.search(pattern_header_ton, full_line_text, flags=re.IGNORECASE))
-            is_bpm_ton = bool(re.search(pattern_bpm_ton, full_line_text, flags=re.IGNORECASE))
+        max_hdr_y = 0
+        for hl in header_lines:
+            spans = hl.get("spans", [])
+            if not spans:
+                continue
+            full_txt = "".join(s.get("text", "") for s in spans).strip()
+            max_hdr_y = max(max_hdr_y, hl["bbox"][3])
+            
+            is_hdr_ton = bool(re.search(pattern_header_ton, full_txt, flags=re.IGNORECASE))
+            is_bpm_ton = bool(re.search(pattern_bpm_ton, full_txt, flags=re.IGNORECASE))
             
             if is_hdr_ton:
-                cleaned_txt = re.sub(pattern_header_ton, '', full_line_text, flags=re.IGNORECASE).strip()
-                first_s = hline["spans"][0]
+                cleaned_txt = re.sub(pattern_header_ton, '', full_txt, flags=re.IGNORECASE).strip()
+                first_s = spans[0]
                 origin = fitz.Point(first_s["origin"])
-                if hline["bbox"][2] > page.rect.width * 0.7:
-                    old_w = fitz.get_text_length(full_line_text, fontname="helv", fontsize=first_s["size"])
+                if hl["bbox"][2] > pw * 0.7:
+                    old_w = fitz.get_text_length(full_txt, fontname="helv", fontsize=first_s["size"])
                     new_w = fitz.get_text_length(cleaned_txt, fontname="helv", fontsize=first_s["size"])
                     origin = fitz.Point(origin.x + (old_w - new_w), origin.y)
                 insert_span_text(page, origin, cleaned_txt, first_s["size"], first_s["font"], first_s.get("flags", 0), first_s.get("color", 0))
                 continue
                 
             if is_bpm_ton:
-                cleaned_bpm = re.sub(pattern_bpm_ton, ' ', full_line_text, flags=re.IGNORECASE)
+                cleaned_bpm = re.sub(pattern_bpm_ton, ' ', full_txt, flags=re.IGNORECASE)
                 cleaned_bpm = re.sub(r'\s+', ' ', cleaned_bpm).strip(' -–|/\t')
                 if cleaned_bpm:
-                    first_s = hline["spans"][0]
+                    first_s = spans[0]
                     origin = fitz.Point(first_s["origin"])
                     insert_span_text(page, origin, cleaned_bpm, first_s["size"], first_s["font"], first_s.get("flags", 0), first_s.get("color", 0))
                 continue
-
-            for s in hline["spans"]:
-                txt = s["text"]
-                origin = fitz.Point(s["origin"])
-                insert_span_text(page, origin, txt, s["size"], s["font"], s.get("flags", 0), s.get("color", 0))
-                    
-        start_y = 115 if pno == 0 else 50
-        
-        if not has_two_cols:
-            curr_y = start_y
-            for item in kept_body:
-                spans = item["spans"]
-                max_fsize = max(s["size"] for s in spans)
-                if item["is_section"] and curr_y > start_y:
-                    curr_y += max_fsize * 0.8
                 
-                delta_y = curr_y - spans[0]["bbox"][1]
-                for s in spans:
-                    pt = fitz.Point(s["origin"][0], s["origin"][1] + delta_y)
-                    insert_span_text(page, pt, s["text"], s["size"], s["font"], s.get("flags", 0), s.get("color", 0))
-                curr_y += max_fsize * 1.3
+            for s in spans:
+                insert_span_text(page, fitz.Point(s["origin"]), s["text"], s["size"], s["font"], s.get("flags", 0), s.get("color", 0))
+
+        # 2. Raggruppamento e compattamento del corpo testo
+        def merge_lines_horizontal(lines_to_merge):
+            visual_lines = []
+            for l in lines_to_merge:
+                y0 = l["bbox"][1]
+                placed = False
+                for vl in visual_lines:
+                    if abs(vl["y0"] - y0) < 3.0:
+                        vl["spans"].extend(l["spans"])
+                        vl["y0"] = min(vl["y0"], l["bbox"][1])
+                        vl["y1"] = max(vl["y1"], l["bbox"][3])
+                        vl["x0"] = min(vl["x0"], l["bbox"][0])
+                        vl["x1"] = max(vl["x1"], l["bbox"][2])
+                        placed = True
+                        break
+                if not placed:
+                    visual_lines.append({
+                        "y0": l["bbox"][1],
+                        "y1": l["bbox"][3],
+                        "x0": l["bbox"][0],
+                        "x1": l["bbox"][2],
+                        "spans": list(l["spans"])
+                    })
+            visual_lines.sort(key=lambda vl: vl["y0"])
+            for vl in visual_lines:
+                vl["spans"].sort(key=lambda s: s["bbox"][0])
+            return visual_lines
+
+        if has_two_cols:
+            col0_raw = [l for l in body_lines if l["bbox"][0] < pw * 0.48]
+            col1_raw = [l for l in body_lines if l["bbox"][0] >= pw * 0.48]
+            cols = [merge_lines_horizontal(col0_raw), merge_lines_horizontal(col1_raw)]
         else:
-            col_y = {0: start_y, 1: start_y}
-            for item in kept_body:
-                c = 0 if item["x0"] <= page_width * 0.45 else 1
-                spans = item["spans"]
-                max_fsize = max(s["size"] for s in spans)
-                if item["is_section"] and col_y[c] > start_y:
-                    col_y[c] += max_fsize * 0.8
-                delta_y = col_y[c] - spans[0]["bbox"][1]
+            cols = [merge_lines_horizontal(body_lines)]
+
+        start_y = max_hdr_y + 18 if (pno == 0 and max_hdr_y > 0) else (115 if pno == 0 else 50)
+        
+        for col_idx, c_lines in enumerate(cols):
+            curr_y = start_y
+            
+            for line_data in c_lines:
+                spans = line_data["spans"]
+                full_text = ""
+                prev_s = None
                 for s in spans:
-                    pt = fitz.Point(s["origin"][0], s["origin"][1] + delta_y)
-                    insert_span_text(page, pt, s["text"], s["size"], s["font"], s.get("flags", 0), s.get("color", 0))
-                col_y[c] += max_fsize * 1.3
+                    t = s.get("text", "")
+                    if not t:
+                        continue
+                    if prev_s is not None:
+                        gap = s["bbox"][0] - prev_s["bbox"][2]
+                        if gap > 2.0 and not full_text.endswith(" ") and not t.startswith(" "):
+                            full_text += " "
+                    full_text += t
+                    prev_s = s
+                
+                clean_text = full_text.strip()
+                if not clean_text:
+                    continue
+                    
+                upper = clean_text.upper()
+                is_lyric = is_lyric_span(clean_text)
+                has_sec = any(upper.startswith(kw) for kw in section_keywords)
+                
+                words_no_parens = re.sub(r'\(.*?\)|\[.*?\]', '', clean_text)
+                all_chords = re.findall(pattern_accordo, words_no_parens, flags=re.IGNORECASE)
+                
+                prefix_match = re.match(r'^((?:INTRO|ENDING|INSTRUMENTAL|CORO|VERSO|BRIDGE|TAG|STROFA|END|OUTRO)\s*:?)(.*)$', clean_text, flags=re.IGNORECASE)
+                if prefix_match and all_chords:
+                    text_to_draw = prefix_match.group(1).strip()
+                    is_section = True
+                elif has_sec and (not all_chords or not is_lyric):
+                    text_to_draw = clean_text
+                    is_section = True
+                elif is_lyric:
+                    text_to_draw = clean_text
+                    is_section = False
+                else:
+                    # Riga di soli accordi -> salta
+                    continue
+                    
+                first_s = spans[0]
+                fsize = first_s["size"]
+                font = first_s["font"]
+                flags = first_s.get("flags", 0)
+                color = first_s.get("color", 0)
+                if color != 0 and color != 0xFFFFFF and not is_section:
+                    color = 0
+                
+                if is_section and curr_y > start_y:
+                    curr_y += fsize * 0.8
+                    
+                insert_x = line_data["x0"]
+                insert_y = curr_y + fsize * 0.95
+                pt = fitz.Point(insert_x, insert_y)
+                
+                insert_span_text(page, pt, text_to_draw, fsize, font, flags, color)
+                curr_y += fsize * 1.35
+
+        # 3. Piè di pagina (inseriti in fondo)
+        for fl in footer_lines:
+            for s in fl.get("spans", []):
+                insert_span_text(page, fitz.Point(s["origin"]), s["text"], s["size"], s["font"], s.get("flags", 0), s.get("color", 0))
 
 def transponi_pdf(pdf_bytes, tonalita_obiettivo, capo_tasto=None, piano_trans=None, solo_testo=False, solo_testo_layout=False, **kwargs):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")

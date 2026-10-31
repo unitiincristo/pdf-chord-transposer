@@ -7,7 +7,7 @@ from pdf_transposer import transponi_pdf
 
 # Configurazione base della pagina
 st.set_page_config(
-    page_title="PDF Chord Transposer v1.7.1",
+    page_title="PDF Chord Transposer v1.7.2",
     page_icon="🎵",
     layout="centered"
 )
@@ -41,7 +41,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🎵 Traspositore Accordi PDF v1.7.1")
+st.title("🎵 Traspositore Accordi PDF v1.7.2")
 st.markdown("Carica il tuo PDF, scegli la nuova tonalità oppure esporta il testo con o senza spaziature originali.")
 
 # Caricamento del file PDF
@@ -161,4 +161,4 @@ if uploaded_file is not None:
                 st.error(f"Si è verificato un errore: {e}")
 
 st.markdown("---")
-st.caption("Versione 1.7.1 - Rimozione indicazione tonalità da titolo e BPM per spartito senza accordi")
+st.caption("Versione 1.7.2 - Risolto compattamento testo (supporto multi-colonna e unione corretta frammenti)")
